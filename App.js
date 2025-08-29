@@ -1,42 +1,17 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { StyleSheet, Text, View, StatusBar } from 'react-native';
+import { StyleSheet, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-//telas
-import ClientesScreen from "./screens/Clientes"
+// Importar todas as telas
+import HomeScreen from './screens/Home';
+import ClientesScreen from './screens/Clientes';
+import PedidosScreen from './screens/Pedidos';
 import ProdutosScreen from './screens/Produtos';
+import ConfiguracaoScreen from './screens/Configuracao';
 
 const Tab = createBottomTabNavigator();
-
-// Telas do aplicativo
-function HomeScreen() {
-  return (
-    <View style={styles.screenContainer}>
-      <Text style={styles.screenTitle}>Home</Text>
-      <Text style={styles.screenText}>Bem-vindo ao seu aplicativo!</Text>
-    </View>
-  );
-}
-
-function PedidosScreen() {
-  return (
-    <View style={styles.screenContainer}>
-      <Text style={styles.screenTitle}>Pedidos</Text>
-      <Text style={styles.screenText}>Visualize e gerencie pedidos</Text>
-    </View>
-  );
-}
-
-function ConfiguracaoScreen() {
-  return (
-    <View style={styles.screenContainer}>
-      <Text style={styles.screenTitle}>Configuração</Text>
-      <Text style={styles.screenText}>Configurações do aplicativo</Text>
-    </View>
-  );
-}
 
 export default function App() {
   return (
@@ -70,9 +45,9 @@ export default function App() {
             headerShown: false,
           })}
         >
+          <Tab.Screen name="Home" component={HomeScreen} />
           <Tab.Screen name="Clientes" component={ClientesScreen} />
           <Tab.Screen name="Pedidos" component={PedidosScreen} />
-          <Tab.Screen name="Home" component={HomeScreen} />
           <Tab.Screen name="Produtos" component={ProdutosScreen} />
           <Tab.Screen name="Configuração" component={ConfiguracaoScreen} />
         </Tab.Navigator>
@@ -82,24 +57,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  screenContainer: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  screenTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    marginBottom: 10,
-  },
-  screenText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
   tabBar: {
     position: 'absolute',
     bottom: 20,
