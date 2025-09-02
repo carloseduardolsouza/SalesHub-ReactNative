@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
-import { Camera, Image as ImageIcon, Search, Filter, Plus } from 'lucide-react-native';
+import { Picker } from '@react-native-picker/picker';
+import { Camera, Image as ImageIcon, Search, Plus, X, Edit3 } from 'lucide-react-native';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
@@ -25,21 +26,27 @@ const ProdutosScreen = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
-  const [empresas, setEmpresas] = useState([]);
-  const [showEmpresaModal, setShowEmpresaModal] = useState(false);
+  const [industrias, setIndustrias] = useState([]);
+  const [showVariacaoModal, setShowVariacaoModal] = useState(false);
 
   const [novoProduto, setNovoProduto] = useState({
     nome: '',
-    valor: '',
-    precoVenda: '',
+    preco: '',
     imagem: null,
-    empresaResponsavel: ''
+    industria: '',
+    descricao: '',
+    variacoes: []
+  });
+
+  const [novaVariacao, setNovaVariacao] = useState({
+    tipo: 'cor', // cor ou tamanho
+    valor: ''
   });
 
   // Carregar dados do AsyncStorage
   useEffect(() => {
     loadProdutos();
-    loadEmpresas();
+    loadIndustrias();
   }, []);
 
   // Filtrar produtos quando houver mudanças
@@ -61,19 +68,15 @@ const ProdutosScreen = () => {
     }
   };
 
-  const loadEmpresas = async () => {
+  const loadIndustrias = async () => {
     try {
-      const clientesData = await AsyncStorage.getItem('clientes');
-      if (clientesData) {
-        const clientes = JSON.parse(clientesData);
-        const empresasList = clientes.map(cliente => ({
-          id: cliente.id,
-          nome: cliente.nomeFantasia || cliente.razaoSocial
-        }));
-        setEmpresas(empresasList);
+      const industriasData = await AsyncStorage.getItem('industrias');
+      if (industriasData) {
+        const industriasList = JSON.parse(industriasData);
+        setIndustrias(industriasList);
       }
     } catch (error) {
-      console.error('Erro ao carregar empresas:', error);
+      console.error('Erro ao carregar indústrias:', error);
     }
   };
 
@@ -94,7 +97,7 @@ const ProdutosScreen = () => {
     if (searchText) {
       filtered = filtered.filter(produto =>
         produto.nome.toLowerCase().includes(searchText.toLowerCase()) ||
-        produto.empresaResponsavel.toLowerCase().includes(searchText.toLowerCase())
+        produto.industria.toLowerCase().includes(searchText.toLowerCase())
       );
     }
 
@@ -124,6 +127,23 @@ const ProdutosScreen = () => {
     return true;
   };
 
+  // Converter imagem para base64
+  const convertImageToBase64 = (imageUri) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function() {
+        const reader = new FileReader();
+        reader.onloadend = function() {
+          resolve(reader.result);
+        };
+        reader.readAsDataURL(xhr.response);
+      };
+      xhr.open('GET', imageUri);
+      xhr.responseType = 'blob';
+      xhr.send();
+    });
+  };
+
   // Abrir câmera
   const openCamera = async () => {
     const hasPermission = await requestCameraPermission();
@@ -138,25 +158,29 @@ const ProdutosScreen = () => {
       quality: 0.8,
       maxWidth: 800,
       maxHeight: 600,
+      includeBase64: true,
     };
 
-    launchCamera(options, (response) => {
+    launchCamera(options, async (response) => {
       setShowImagePickerModal(false);
       
-      if (response.didCancel) {
-        return;
-      }
-
-      if (response.error) {
-        Alert.alert('Erro', 'Erro ao tirar foto: ' + response.error);
+      if (response.didCancel || response.error) {
         return;
       }
 
       if (response.assets && response.assets[0]) {
-        setNovoProduto({
-          ...novoProduto,
-          imagem: response.assets[0]
-        });
+        const asset = response.assets[0];
+        try {
+          // Salvar a imagem como base64 para persistir nos dados
+          const base64Data = `data:${asset.type};base64,${asset.base64}`;
+          setNovoProduto({
+            ...novoProduto,
+            imagem: base64Data
+          });
+        } catch (error) {
+          console.error('Erro ao processar imagem:', error);
+          Alert.alert('Erro', 'Erro ao processar a imagem');
+        }
       }
     });
   };
@@ -168,25 +192,29 @@ const ProdutosScreen = () => {
       quality: 0.8,
       maxWidth: 800,
       maxHeight: 600,
+      includeBase64: true,
     };
 
-    launchImageLibrary(options, (response) => {
+    launchImageLibrary(options, async (response) => {
       setShowImagePickerModal(false);
       
-      if (response.didCancel) {
-        return;
-      }
-
-      if (response.error) {
-        Alert.alert('Erro', 'Erro ao selecionar imagem: ' + response.error);
+      if (response.didCancel || response.error) {
         return;
       }
 
       if (response.assets && response.assets[0]) {
-        setNovoProduto({
-          ...novoProduto,
-          imagem: response.assets[0]
-        });
+        const asset = response.assets[0];
+        try {
+          // Salvar a imagem como base64 para persistir nos dados
+          const base64Data = `data:${asset.type};base64,${asset.base64}`;
+          setNovoProduto({
+            ...novoProduto,
+            imagem: base64Data
+          });
+        } catch (error) {
+          console.error('Erro ao processar imagem:', error);
+          Alert.alert('Erro', 'Erro ao processar a imagem');
+        }
       }
     });
   };
@@ -206,11 +234,11 @@ const ProdutosScreen = () => {
     });
   };
 
-  const handleMoneyInput = (value, field) => {
+  const handleMoneyInput = (value) => {
     const formatted = formatMoney(value);
     setNovoProduto({
       ...novoProduto,
-      [field]: formatted
+      preco: formatted
     });
   };
 
@@ -218,35 +246,63 @@ const ProdutosScreen = () => {
     return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0;
   };
 
+  // Adicionar variação
+  const adicionarVariacao = () => {
+    if (!novaVariacao.valor.trim()) {
+      Alert.alert('Erro', 'Digite um valor para a variação!');
+      return;
+    }
+
+    const variacaoExistente = novoProduto.variacoes.find(v => 
+      v.tipo === novaVariacao.tipo && v.valor.toLowerCase() === novaVariacao.valor.toLowerCase()
+    );
+
+    if (variacaoExistente) {
+      Alert.alert('Erro', 'Esta variação já foi adicionada!');
+      return;
+    }
+
+    setNovoProduto({
+      ...novoProduto,
+      variacoes: [...novoProduto.variacoes, { ...novaVariacao }]
+    });
+
+    setNovaVariacao({ tipo: 'cor', valor: '' });
+  };
+
+  // Remover variação
+  const removerVariacao = (index) => {
+    const novasVariacoes = novoProduto.variacoes.filter((_, i) => i !== index);
+    setNovoProduto({
+      ...novoProduto,
+      variacoes: novasVariacoes
+    });
+  };
+
   const salvarProduto = async () => {
     // Validações
-    if (!novoProduto.nome || !novoProduto.valor || !novoProduto.precoVenda) {
-      Alert.alert('Erro', 'Nome, Valor e Preço de Venda são obrigatórios!');
+    if (!novoProduto.nome.trim() || !novoProduto.preco || !novoProduto.industria) {
+      Alert.alert('Erro', 'Nome, Preço e Indústria são obrigatórios!');
       return;
     }
 
-    if (!novoProduto.empresaResponsavel) {
-      Alert.alert('Erro', 'Selecione uma empresa responsável!');
+    const preco = parseMoneyValue(novoProduto.preco);
+
+    if (preco <= 0) {
+      Alert.alert('Erro', 'O preço deve ser maior que zero!');
       return;
-    }
-
-    const valor = parseMoneyValue(novoProduto.valor);
-    const precoVenda = parseMoneyValue(novoProduto.precoVenda);
-
-    if (precoVenda <= valor) {
-      Alert.alert('Atenção', 'O preço de venda deve ser maior que o valor de custo!');
     }
 
     try {
       const produto = {
         id: Date.now(),
-        nome: novoProduto.nome,
-        valor: valor,
-        precoVenda: precoVenda,
-        imagem: novoProduto.imagem ? novoProduto.imagem.uri : null,
-        empresaResponsavel: novoProduto.empresaResponsavel,
-        dataCadastro: new Date().toISOString(),
-        margem: ((precoVenda - valor) / valor * 100).toFixed(2)
+        nome: novoProduto.nome.trim(),
+        preco: preco,
+        imagem: novoProduto.imagem,
+        industria: novoProduto.industria,
+        descricao: novoProduto.descricao.trim(),
+        variacoes: novoProduto.variacoes,
+        dataCadastro: new Date().toISOString()
       };
 
       const novosProdutos = [produto, ...produtos];
@@ -255,10 +311,11 @@ const ProdutosScreen = () => {
       // Limpar formulário
       setNovoProduto({
         nome: '',
-        valor: '',
-        precoVenda: '',
+        preco: '',
         imagem: null,
-        empresaResponsavel: ''
+        industria: '',
+        descricao: '',
+        variacoes: []
       });
 
       setShowAddProductModal(false);
@@ -309,9 +366,13 @@ const ProdutosScreen = () => {
       />
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
-        <Text style={styles.productCompany} numberOfLines={1}>{item.empresaResponsavel}</Text>
-        <Text style={styles.productPrice}>R$ {item.precoVenda.toFixed(2)}</Text>
-        <Text style={styles.productMargin}>Margem: {item.margem}%</Text>
+        <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
+        <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
+        {item.variacoes.length > 0 && (
+          <Text style={styles.productVariations}>
+            {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
+          </Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -328,7 +389,7 @@ const ProdutosScreen = () => {
         <Search size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Pesquisar produto ou empresa..."
+          placeholder="Pesquisar produto ou indústria..."
           value={searchText}
           onChangeText={setSearchText}
           placeholderTextColor="#999"
@@ -373,22 +434,33 @@ const ProdutosScreen = () => {
                     style={styles.productDetailImage}
                   />
                   <Text style={styles.productDetailName}>{selectedProduct.nome}</Text>
-                  <Text style={styles.productDetailCompany}>{selectedProduct.empresaResponsavel}</Text>
+                  <Text style={styles.productDetailCompany}>{selectedProduct.industria}</Text>
                   
                   <View style={styles.priceContainer}>
-                    <View style={styles.priceItem}>
-                      <Text style={styles.priceLabel}>Valor de Custo:</Text>
-                      <Text style={styles.priceValue}>R$ {selectedProduct.valor.toFixed(2)}</Text>
-                    </View>
-                    <View style={styles.priceItem}>
-                      <Text style={styles.priceLabel}>Preço de Venda:</Text>
-                      <Text style={styles.priceValueSale}>R$ {selectedProduct.precoVenda.toFixed(2)}</Text>
-                    </View>
-                    <View style={styles.priceItem}>
-                      <Text style={styles.priceLabel}>Margem de Lucro:</Text>
-                      <Text style={styles.marginValue}>{selectedProduct.margem}%</Text>
-                    </View>
+                    <Text style={styles.priceLabel}>Preço:</Text>
+                    <Text style={styles.priceValue}>R$ {selectedProduct.preco.toFixed(2)}</Text>
                   </View>
+
+                  {selectedProduct.descricao && (
+                    <View style={styles.descriptionContainer}>
+                      <Text style={styles.descriptionLabel}>Descrição:</Text>
+                      <Text style={styles.descriptionValue}>{selectedProduct.descricao}</Text>
+                    </View>
+                  )}
+
+                  {selectedProduct.variacoes && selectedProduct.variacoes.length > 0 && (
+                    <View style={styles.variationsContainer}>
+                      <Text style={styles.variationsLabel}>Variações:</Text>
+                      {selectedProduct.variacoes.map((variacao, index) => (
+                        <View key={index} style={styles.variationItem}>
+                          <Text style={styles.variationType}>
+                            {variacao.tipo === 'cor' ? 'Cor' : 'Tamanho'}:
+                          </Text>
+                          <Text style={styles.variationValue}>{variacao.valor}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
 
                   <Text style={styles.dateText}>
                     Cadastrado em: {new Date(selectedProduct.dataCadastro).toLocaleDateString('pt-BR')}
@@ -429,7 +501,7 @@ const ProdutosScreen = () => {
                 onPress={() => setShowImagePickerModal(true)}
               >
                 {novoProduto.imagem ? (
-                  <Image source={{ uri: novoProduto.imagem.uri }} style={styles.selectedImage} />
+                  <Image source={{ uri: novoProduto.imagem }} style={styles.selectedImage} />
                 ) : (
                   <View style={styles.imagePlaceholder}>
                     <ImageIcon size={40} color="#999" />
@@ -446,33 +518,89 @@ const ProdutosScreen = () => {
                 onChangeText={(text) => setNovoProduto({...novoProduto, nome: text})}
               />
               
-              <Text style={styles.inputLabel}>Valor de Custo *</Text>
+              <Text style={styles.inputLabel}>Preço *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="0,00"
-                value={novoProduto.valor}
-                onChangeText={(text) => handleMoneyInput(text, 'valor')}
-                keyboardType="numeric"
-              />
-              
-              <Text style={styles.inputLabel}>Preço de Venda *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0,00"
-                value={novoProduto.precoVenda}
-                onChangeText={(text) => handleMoneyInput(text, 'precoVenda')}
+                value={novoProduto.preco}
+                onChangeText={handleMoneyInput}
                 keyboardType="numeric"
               />
 
-              <Text style={styles.inputLabel}>Empresa Responsável *</Text>
-              <TouchableOpacity
-                style={styles.empresaSelector}
-                onPress={() => setShowEmpresaModal(true)}
-              >
-                <Text style={[styles.empresaSelectorText, !novoProduto.empresaResponsavel && styles.placeholder]}>
-                  {novoProduto.empresaResponsavel || 'Selecione uma empresa'}
-                </Text>
-              </TouchableOpacity>
+              <Text style={styles.inputLabel}>Indústria *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={novoProduto.industria}
+                  onValueChange={(value) => setNovoProduto({...novoProduto, industria: value})}
+                  style={styles.picker}
+                >
+                  <Picker.Item label="Selecione uma indústria" value="" />
+                  {industrias.map(industria => (
+                    <Picker.Item 
+                      key={industria.id} 
+                      label={industria.nome} 
+                      value={industria.nome} 
+                    />
+                  ))}
+                </Picker>
+              </View>
+
+              <Text style={styles.inputLabel}>Descrição</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Descrição do produto (opcional)"
+                value={novoProduto.descricao}
+                onChangeText={(text) => setNovoProduto({...novoProduto, descricao: text})}
+                multiline
+                numberOfLines={3}
+              />
+
+              {/* Variações Section */}
+              <Text style={styles.inputLabel}>Variações (Cores/Tamanhos)</Text>
+              
+              <View style={styles.variationInputContainer}>
+                <View style={styles.variationTypeContainer}>
+                  <Picker
+                    selectedValue={novaVariacao.tipo}
+                    onValueChange={(value) => setNovaVariacao({...novaVariacao, tipo: value})}
+                    style={styles.variationTypePicker}
+                  >
+                    <Picker.Item label="Cor" value="cor" />
+                    <Picker.Item label="Tamanho" value="tamanho" />
+                  </Picker>
+                </View>
+                
+                <TextInput
+                  style={[styles.input, styles.variationInput]}
+                  placeholder={novaVariacao.tipo === 'cor' ? 'Ex: Azul, Vermelho' : 'Ex: P, M, G'}
+                  value={novaVariacao.valor}
+                  onChangeText={(text) => setNovaVariacao({...novaVariacao, valor: text})}
+                />
+                
+                <TouchableOpacity style={styles.addVariationButton} onPress={adicionarVariacao}>
+                  <Plus size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Lista de variações adicionadas */}
+              {novoProduto.variacoes.length > 0 && (
+                <View style={styles.addedVariationsContainer}>
+                  <Text style={styles.addedVariationsTitle}>Variações Adicionadas:</Text>
+                  {novoProduto.variacoes.map((variacao, index) => (
+                    <View key={index} style={styles.addedVariationItem}>
+                      <Text style={styles.addedVariationText}>
+                        {variacao.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {variacao.valor}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.removeVariationButton}
+                        onPress={() => removerVariacao(index)}
+                      >
+                        <X size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
               
               <View style={styles.modalButtons}>
                 <TouchableOpacity
@@ -515,37 +643,6 @@ const ProdutosScreen = () => {
               onPress={() => setShowImagePickerModal(false)}
             >
               <Text style={styles.cancelButtonText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Empresa Selector Modal */}
-      <Modal visible={showEmpresaModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.empresaModalContainer}>
-            <Text style={styles.modalTitle}>Selecionar Empresa</Text>
-            
-            <ScrollView style={styles.empresaList}>
-              {empresas.map(empresa => (
-                <TouchableOpacity
-                  key={empresa.id}
-                  style={styles.empresaOption}
-                  onPress={() => {
-                    setNovoProduto({...novoProduto, empresaResponsavel: empresa.nome});
-                    setShowEmpresaModal(false);
-                  }}
-                >
-                  <Text style={styles.empresaOptionText}>{empresa.nome}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowEmpresaModal(false)}
-            >
-              <Text style={styles.closeButtonText}>Fechar</Text>
             </TouchableOpacity>
           </View>
         </View>
