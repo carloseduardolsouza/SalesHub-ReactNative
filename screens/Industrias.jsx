@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,69 +11,60 @@ import {
   Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Search, Filter, Plus, Check, Calendar } from 'lucide-react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Search, Filter, Plus, Check, Building, Phone, Mail } from 'lucide-react-native';
 
-const ClientesScreen = ({ navigation }) => {
+const IndustriasScreen = ({ navigation }) => {
   // Estados
-  const [clientes, setClientes] = useState([]);
+  const [industrias, setIndustrias] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCadastroModal, setShowCadastroModal] = useState(false);
-  const [selectedFields, setSelectedFields] = useState(['nomeFantasia', 'cidade', 'cnpj']);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedIndustria, setSelectedIndustria] = useState(null);
+  const [selectedFields, setSelectedFields] = useState(['nome', 'cnpj', 'telefoneComercial']);
 
   // Estado do formulário de cadastro
-  const [novoCliente, setNovoCliente] = useState({
+  const [novaIndustria, setNovaIndustria] = useState({
     cnpj: '',
-    nomeFantasia: '',
-    razaoSocial: '',
-    cidade: '',
-    inscricaoEstadual: '',
-    nomeComprador: '',
-    estado: '',
-    email: '',
-    telefone: '',
-    dataNascimento: new Date()
+    nome: '',
+    telefoneAssistencia: '',
+    telefoneComercial: '',
+    email: ''
   });
 
   // Opções de campos disponíveis
   const availableFields = [
-    { key: 'nomeFantasia', label: 'Nome Fantasia' },
-    { key: 'razaoSocial', label: 'Razão Social' },
-    { key: 'cidade', label: 'Cidade' },
+    { key: 'nome', label: 'Nome da Indústria' },
     { key: 'cnpj', label: 'CNPJ' },
-    { key: 'inscricaoEstadual', label: 'Inscrição Estadual' },
-    { key: 'nomeComprador', label: 'Nome do Comprador' },
-    { key: 'estado', label: 'Estado' },
-    { key: 'telefone', label: 'Telefone' },
+    { key: 'telefoneComercial', label: 'Telefone Comercial' },
+    { key: 'telefoneAssistencia', label: 'Telefone Assistência' },
     { key: 'email', label: 'Email' }
   ];
 
   // Carregar dados do AsyncStorage
   useEffect(() => {
-    loadClientes();
+    loadIndustrias();
   }, []);
 
-  const loadClientes = async () => {
+  const loadIndustrias = async () => {
     try {
-      const clientesData = await AsyncStorage.getItem('clientes');
-      if (clientesData) {
-        setClientes(JSON.parse(clientesData));
+      const industriasData = await AsyncStorage.getItem('industrias');
+      if (industriasData) {
+        setIndustrias(JSON.parse(industriasData));
       }
     } catch (error) {
-      console.error('Erro ao carregar clientes:', error);
-      Alert.alert('Erro', 'Erro ao carregar dados dos clientes');
+      console.error('Erro ao carregar indústrias:', error);
+      Alert.alert('Erro', 'Erro ao carregar dados das indústrias');
     }
   };
 
-  const saveClientes = async (clientesData) => {
+  const saveIndustrias = async (industriasData) => {
     try {
-      await AsyncStorage.setItem('clientes', JSON.stringify(clientesData));
-      setClientes(clientesData);
+      await AsyncStorage.setItem('industrias', JSON.stringify(industriasData));
+      setIndustrias(industriasData);
     } catch (error) {
-      console.error('Erro ao salvar clientes:', error);
-      Alert.alert('Erro', 'Erro ao salvar dados dos clientes');
+      console.error('Erro ao salvar indústrias:', error);
+      Alert.alert('Erro', 'Erro ao salvar dados das indústrias');
     }
   };
 
@@ -83,25 +74,24 @@ const ClientesScreen = ({ navigation }) => {
     return cleanText.length >= 11 && /^\d+$/.test(cleanText);
   };
 
-  // Filtrar clientes baseado na busca
-  const filteredClientes = useMemo(() => {
-    if (!searchText.trim()) return clientes;
+  // Filtrar indústrias baseado na busca
+  const filteredIndustrias = useMemo(() => {
+    if (!searchText.trim()) return industrias;
 
-    return clientes.filter(cliente => {
+    return industrias.filter(industria => {
       const searchLower = searchText.toLowerCase().trim();
       
       if (isCNPJ(searchText)) {
         // Se parece com CNPJ, busca apenas no CNPJ
-        const cnpjNumbers = cliente.cnpj.replace(/\D/g, '');
+        const cnpjNumbers = industria.cnpj.replace(/\D/g, '');
         const searchNumbers = searchText.replace(/\D/g, '');
         return cnpjNumbers.includes(searchNumbers);
       } else {
-        // Se não parece com CNPJ, busca no nome fantasia ou razão social
-        return cliente.nomeFantasia.toLowerCase().includes(searchLower) ||
-               cliente.razaoSocial.toLowerCase().includes(searchLower);
+        // Se não parece com CNPJ, busca no nome
+        return industria.nome.toLowerCase().includes(searchLower);
       }
     });
-  }, [clientes, searchText]);
+  }, [industrias, searchText]);
 
   // Função para alternar seleção de campo
   const toggleField = (fieldKey) => {
@@ -129,95 +119,121 @@ const ClientesScreen = ({ navigation }) => {
   const formatTelefone = (telefone) => {
     const cleaned = telefone.replace(/\D/g, '');
     if (cleaned.length <= 11) {
-      return cleaned.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+      return cleaned.replace(/(\d{2})(\d{4,5})(\d{4})/, '($1) $2-$3');
     }
     return telefone;
   };
 
   // Função para validar email
   const isValidEmail = (email) => {
+    if (!email) return true; // Email não é obrigatório
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
-  // Função para salvar novo cliente
-  const salvarCliente = async () => {
-    // Validações
-    if (!novoCliente.cnpj || !novoCliente.nomeFantasia || !novoCliente.razaoSocial) {
-      Alert.alert('Erro', 'CNPJ, Nome Fantasia e Razão Social são obrigatórios!');
+  // Função para salvar nova indústria
+  const salvarIndustria = async () => {
+    // Validações obrigatórias
+    if (!novaIndustria.cnpj || !novaIndustria.nome) {
+      Alert.alert('Erro', 'CNPJ e Nome são obrigatórios!');
       return;
     }
 
-    if (!isValidEmail(novoCliente.email)) {
+    // Validar email se preenchido
+    if (novaIndustria.email && !isValidEmail(novaIndustria.email)) {
       Alert.alert('Erro', 'Email inválido!');
       return;
     }
 
-    const cnpjLimpo = novoCliente.cnpj.replace(/\D/g, '');
+    const cnpjLimpo = novaIndustria.cnpj.replace(/\D/g, '');
     if (cnpjLimpo.length !== 14) {
       Alert.alert('Erro', 'CNPJ deve ter 14 dígitos!');
       return;
     }
 
     // Verificar se CNPJ já existe
-    const clienteExistente = clientes.find(cliente => 
-      cliente.cnpj.replace(/\D/g, '') === cnpjLimpo
+    const industriaExistente = industrias.find(industria => 
+      industria.cnpj.replace(/\D/g, '') === cnpjLimpo
     );
 
-    if (clienteExistente) {
+    if (industriaExistente) {
       Alert.alert('Erro', 'CNPJ já cadastrado!');
       return;
     }
 
     try {
-      const clienteFormatado = {
+      const industriaFormatada = {
         id: Date.now(),
-        ...novoCliente,
-        cnpj: formatCNPJ(novoCliente.cnpj),
-        telefone: formatTelefone(novoCliente.telefone),
-        dataNascimento: novoCliente.dataNascimento.toISOString().split('T')[0],
+        nome: novaIndustria.nome.trim(),
+        cnpj: formatCNPJ(novaIndustria.cnpj),
+        telefoneComercial: novaIndustria.telefoneComercial ? formatTelefone(novaIndustria.telefoneComercial) : '',
+        telefoneAssistencia: novaIndustria.telefoneAssistencia ? formatTelefone(novaIndustria.telefoneAssistencia) : '',
+        email: novaIndustria.email.trim().toLowerCase(),
         dataCadastro: new Date().toISOString()
       };
 
-      const novosClientes = [clienteFormatado, ...clientes];
-      await saveClientes(novosClientes);
+      const novasIndustrias = [industriaFormatada, ...industrias];
+      await saveIndustrias(novasIndustrias);
 
       // Limpar formulário
-      setNovoCliente({
+      setNovaIndustria({
         cnpj: '',
-        nomeFantasia: '',
-        razaoSocial: '',
-        cidade: '',
-        inscricaoEstadual: '',
-        nomeComprador: '',
-        estado: '',
-        email: '',
-        telefone: '',
-        dataNascimento: new Date()
+        nome: '',
+        telefoneAssistencia: '',
+        telefoneComercial: '',
+        email: ''
       });
 
       setShowCadastroModal(false);
-      Alert.alert('Sucesso', 'Cliente cadastrado com sucesso!');
+      Alert.alert('Sucesso', 'Indústria cadastrada com sucesso!');
     } catch (error) {
-      console.error('Erro ao salvar cliente:', error);
-      Alert.alert('Erro', 'Erro ao cadastrar cliente');
+      console.error('Erro ao salvar indústria:', error);
+      Alert.alert('Erro', 'Erro ao cadastrar indústria');
     }
   };
 
+  // Função para excluir indústria
+  const excluirIndustria = (industriaId) => {
+    Alert.alert(
+      'Excluir Indústria',
+      'Tem certeza que deseja excluir esta indústria? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const industriasAtualizadas = industrias.filter(i => i.id !== industriaId);
+              await saveIndustrias(industriasAtualizadas);
+              setShowDetailsModal(false);
+              Alert.alert('Sucesso', 'Indústria excluída com sucesso!');
+            } catch (error) {
+              Alert.alert('Erro', 'Erro ao excluir indústria');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Componente para renderizar cada linha da tabela
-  const renderClienteItem = ({ item }) => (
-    <View style={styles.tableRow}>
+  const renderIndustriaItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.tableRow}
+      onPress={() => {
+        setSelectedIndustria(item);
+        setShowDetailsModal(true);
+      }}
+    >
       {selectedFields.map(fieldKey => (
         <View key={fieldKey} style={styles.tableCell}>
           <Text style={styles.cellText} numberOfLines={2}>
-            {fieldKey === 'dataNascimento' && item[fieldKey] 
-              ? new Date(item[fieldKey]).toLocaleDateString('pt-BR')
-              : item[fieldKey] || '-'
-            }
+            {item[fieldKey] || '-'}
           </Text>
         </View>
       ))}
-    </View>
+    </TouchableOpacity>
   );
 
   // Renderizar cabeçalho da tabela
@@ -238,13 +254,13 @@ const ClientesScreen = ({ navigation }) => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Clientes</Text>
+        <Text style={styles.title}>Indústrias</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => setShowCadastroModal(true)}
         >
           <Plus size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Novo Cliente</Text>
+          <Text style={styles.addButtonText}>Nova Indústria</Text>
         </TouchableOpacity>
       </View>
 
@@ -254,7 +270,7 @@ const ClientesScreen = ({ navigation }) => {
           <Search size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por nome, razão social ou CNPJ..."
+            placeholder="Buscar por nome ou CNPJ..."
             value={searchText}
             onChangeText={setSearchText}
             placeholderTextColor="#999"
@@ -269,17 +285,28 @@ const ClientesScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Contador de indústrias */}
+      <View style={styles.counterContainer}>
+        <Text style={styles.counterText}>
+          {filteredIndustrias.length} indústria(s) encontrada(s)
+        </Text>
+      </View>
+
       {/* Tabela */}
       <View style={styles.tableContainer}>
         {renderTableHeader()}
         <FlatList
-          data={filteredClientes}
-          renderItem={renderClienteItem}
+          data={filteredIndustrias}
+          renderItem={renderIndustriaItem}
           keyExtractor={(item) => item.id.toString()}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Nenhum cliente encontrado</Text>
+              <Building size={60} color="#ccc" />
+              <Text style={styles.emptyText}>Nenhuma indústria encontrada</Text>
+              <Text style={styles.emptySubtext}>
+                Toque em "Nova Indústria" para cadastrar
+              </Text>
             </View>
           }
         />
@@ -343,111 +370,59 @@ const ClientesScreen = ({ navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.cadastroModalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>Cadastrar Cliente</Text>
+              <Text style={styles.modalTitle}>Cadastrar Nova Indústria</Text>
 
               <Text style={styles.inputLabel}>CNPJ *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="00.000.000/0000-00"
-                value={novoCliente.cnpj}
-                onChangeText={(text) => setNovoCliente({...novoCliente, cnpj: formatCNPJ(text)})}
+                value={novaIndustria.cnpj}
+                onChangeText={(text) => setNovaIndustria({...novaIndustria, cnpj: formatCNPJ(text)})}
                 keyboardType="numeric"
                 maxLength={18}
               />
 
-              <Text style={styles.inputLabel}>Nome Fantasia *</Text>
+              <Text style={styles.inputLabel}>Nome da Indústria *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Nome fantasia da empresa"
-                value={novoCliente.nomeFantasia}
-                onChangeText={(text) => setNovoCliente({...novoCliente, nomeFantasia: text})}
+                placeholder="Ex: Apple Inc., Samsung Electronics..."
+                value={novaIndustria.nome}
+                onChangeText={(text) => setNovaIndustria({...novaIndustria, nome: text})}
               />
 
-              <Text style={styles.inputLabel}>Razão Social *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Razão social da empresa"
-                value={novoCliente.razaoSocial}
-                onChangeText={(text) => setNovoCliente({...novoCliente, razaoSocial: text})}
-              />
-
-              <Text style={styles.inputLabel}>Cidade</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Cidade"
-                value={novoCliente.cidade}
-                onChangeText={(text) => setNovoCliente({...novoCliente, cidade: text})}
-              />
-
-              <Text style={styles.inputLabel}>Estado</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Estado (UF)"
-                value={novoCliente.estado}
-                onChangeText={(text) => setNovoCliente({...novoCliente, estado: text.toUpperCase()})}
-                maxLength={2}
-              />
-
-              <Text style={styles.inputLabel}>Inscrição Estadual</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Inscrição estadual"
-                value={novoCliente.inscricaoEstadual}
-                onChangeText={(text) => setNovoCliente({...novoCliente, inscricaoEstadual: text})}
-              />
-
-              <Text style={styles.inputLabel}>Nome do Comprador</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Nome da pessoa responsável pelas compras"
-                value={novoCliente.nomeComprador}
-                onChangeText={(text) => setNovoCliente({...novoCliente, nomeComprador: text})}
-              />
-
-              <Text style={styles.inputLabel}>Email *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="email@empresa.com"
-                value={novoCliente.email}
-                onChangeText={(text) => setNovoCliente({...novoCliente, email: text})}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-
-              <Text style={styles.inputLabel}>Telefone</Text>
+              <Text style={styles.inputLabel}>Telefone Comercial</Text>
               <TextInput
                 style={styles.input}
                 placeholder="(11) 99999-9999"
-                value={novoCliente.telefone}
-                onChangeText={(text) => setNovoCliente({...novoCliente, telefone: formatTelefone(text)})}
+                value={novaIndustria.telefoneComercial}
+                onChangeText={(text) => setNovaIndustria({...novaIndustria, telefoneComercial: formatTelefone(text)})}
                 keyboardType="phone-pad"
                 maxLength={15}
               />
 
-              <Text style={styles.inputLabel}>Data de Nascimento (Comprador)</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Calendar size={20} color="#666" />
-                <Text style={styles.dateButtonText}>
-                  {novoCliente.dataNascimento.toLocaleDateString('pt-BR')}
-                </Text>
-              </TouchableOpacity>
+              <Text style={styles.inputLabel}>Telefone Assistência Técnica</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 88888-8888"
+                value={novaIndustria.telefoneAssistencia}
+                onChangeText={(text) => setNovaIndustria({...novaIndustria, telefoneAssistencia: formatTelefone(text)})}
+                keyboardType="phone-pad"
+                maxLength={15}
+              />
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={novoCliente.dataNascimento}
-                  mode="date"
-                  display="default"
-                  onChange={(event, selectedDate) => {
-                    setShowDatePicker(false);
-                    if (selectedDate) {
-                      setNovoCliente({...novoCliente, dataNascimento: selectedDate});
-                    }
-                  }}
-                />
-              )}
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="contato@industria.com"
+                value={novaIndustria.email}
+                onChangeText={(text) => setNovaIndustria({...novaIndustria, email: text})}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.requiredFieldsNote}>
+                * Campos obrigatórios
+              </Text>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
@@ -459,11 +434,87 @@ const ClientesScreen = ({ navigation }) => {
                 
                 <TouchableOpacity
                   style={styles.saveButton}
-                  onPress={salvarCliente}
+                  onPress={salvarIndustria}
                 >
-                  <Text style={styles.saveButtonText}>Salvar Cliente</Text>
+                  <Text style={styles.saveButtonText}>Salvar</Text>
                 </TouchableOpacity>
               </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Detalhes */}
+      <Modal
+        visible={showDetailsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDetailsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.detailsModalContainer}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {selectedIndustria && (
+                <>
+                  <Text style={styles.modalTitle}>Detalhes da Indústria</Text>
+
+                  <View style={styles.detailCard}>
+                    <Building size={40} color="#007AFF" style={styles.detailIcon} />
+                    <Text style={styles.detailName}>{selectedIndustria.nome}</Text>
+                    <Text style={styles.detailCnpj}>{selectedIndustria.cnpj}</Text>
+                  </View>
+
+                  {selectedIndustria.telefoneComercial && (
+                    <View style={styles.contactItem}>
+                      <Phone size={20} color="#4CAF50" />
+                      <View style={styles.contactInfo}>
+                        <Text style={styles.contactLabel}>Telefone Comercial</Text>
+                        <Text style={styles.contactValue}>{selectedIndustria.telefoneComercial}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {selectedIndustria.telefoneAssistencia && (
+                    <View style={styles.contactItem}>
+                      <Phone size={20} color="#FF9800" />
+                      <View style={styles.contactInfo}>
+                        <Text style={styles.contactLabel}>Telefone Assistência</Text>
+                        <Text style={styles.contactValue}>{selectedIndustria.telefoneAssistencia}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {selectedIndustria.email && (
+                    <View style={styles.contactItem}>
+                      <Mail size={20} color="#9C27B0" />
+                      <View style={styles.contactInfo}>
+                        <Text style={styles.contactLabel}>Email</Text>
+                        <Text style={styles.contactValue}>{selectedIndustria.email}</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  <Text style={styles.cadastroDate}>
+                    Cadastrado em: {new Date(selectedIndustria.dataCadastro).toLocaleDateString('pt-BR')}
+                  </Text>
+
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => excluirIndustria(selectedIndustria.id)}
+                    >
+                      <Text style={styles.deleteButtonText}>Excluir</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={styles.closeDetailsButton}
+                      onPress={() => setShowDetailsModal(false)}
+                    >
+                      <Text style={styles.closeButtonText}>Fechar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -540,6 +591,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#007AFF',
   },
+  counterContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+  },
+  counterText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
   tableContainer: {
     flex: 1,
     backgroundColor: '#fff',
@@ -585,7 +646,14 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: '#999',
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 15,
+  },
+  emptySubtext: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 5,
   },
   modalOverlay: {
     flex: 1,
@@ -603,7 +671,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 15,
     width: '95%',
-    maxHeight: '95%',
+    maxHeight: '90%',
+  },
+  detailsModalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    width: '90%',
+    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -686,21 +760,65 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginHorizontal: 20,
   },
-  dateButton: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 10,
+  requiredFieldsNote: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  detailCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    padding: 20,
+    alignItems: 'center',
     marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  detailIcon: {
+    marginBottom: 10,
+  },
+  detailName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  detailCnpj: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: 'monospace',
+  },
+  contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  dateButtonText: {
+  contactInfo: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  contactLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  contactValue: {
     fontSize: 16,
     color: '#333',
-    marginLeft: 10,
+    fontWeight: '500',
+  },
+  cadastroDate: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+    fontStyle: 'italic',
   },
   modalButtons: {
     flexDirection: 'row',
@@ -731,6 +849,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: '#f44336',
+    borderRadius: 8,
+    padding: 15,
+  },
+  deleteButtonText: {
+    textAlign: 'center',
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  closeDetailsButton: {
+    flex: 1,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    padding: 15,
+  },
 });
 
-export default ClientesScreen;
+export default IndustriasScreen;

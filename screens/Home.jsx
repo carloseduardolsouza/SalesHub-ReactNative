@@ -171,9 +171,9 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => navigation.navigate('Clientes')}
+            onPress={() => navigation.navigate('Industrias')}
           >
-            <Text style={styles.actionButtonText}>👥 Novo Cliente</Text>
+            <Text style={styles.actionButtonText}>👥 Industrias</Text>
           </TouchableOpacity>
         </View>
       </View>
