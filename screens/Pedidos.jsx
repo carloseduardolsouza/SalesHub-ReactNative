@@ -10,15 +10,19 @@ import {
   Alert,
   StyleSheet,
   Image,
-  Share,
   Platform,
-  PermissionsAndroid,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { Search, Plus, Minus, ShoppingCart, X, Filter, Check, Download, FileText } from 'lucide-react-native';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
-import RNFS from 'react-native-fs';
+
+// NOVAS IMPORTS
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+
+// O componente 'renderPedidoItem' está sendo importado de '../components/renderPedidoItem' no código original.
+// Como ele usa a função getStatusColor/getStatusText que está neste arquivo, vou redefini-lo aqui para garantir que funcione.
+// Se você mantiver o import, esta redefinição deverá ser removida.
 
 const PedidosScreen = () => {
   // Estados principais
@@ -26,18 +30,18 @@ const PedidosScreen = () => {
   const [clientes, setClientes] = useState([]);
   const [produtos, setProdutos] = useState([]);
   const [industrias, setIndustrias] = useState([]);
-  
+
   // Estados de filtros e busca
   const [filteredPedidos, setFilteredPedidos] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('Todos');
-  
+
   // Estados dos modais
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showProductSelectionModal, setShowProductSelectionModal] = useState(false);
-  const [showOrderDetailsModal, setShowOrderDetailsModal] = useState(false);
+  const [showOrderDetailsModal, setShowOrderDetails] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  
+
   // Estados do novo pedido
   const [newOrder, setNewOrder] = useState({
     cliente: '',
@@ -48,12 +52,12 @@ const PedidosScreen = () => {
     observacoes: '',
     status: 'pendente',
   });
-  
+
   // Estados para seleção de produtos
   const [productSearch, setProductSearch] = useState('');
   const [selectedIndustrias, setSelectedIndustrias] = useState([]);
   const [clienteSearch, setClienteSearch] = useState('');
-  
+
   const statusOptions = ['Todos', 'pendente', 'processando', 'concluido', 'cancelado'];
   const metodoPagamentoOptions = [
     { value: 'dinheiro', label: 'Dinheiro' },
@@ -164,35 +168,14 @@ const PedidosScreen = () => {
     return { subtotal, desconto, total };
   };
 
-  // Função para solicitar permissões no Android
-  const requestStoragePermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-          {
-            title: 'Permissão de Armazenamento',
-            message: 'Este app precisa de acesso ao armazenamento para salvar o PDF.',
-            buttonNeutral: 'Perguntar Depois',
-            buttonNegative: 'Cancelar',
-            buttonPositive: 'OK',
-          }
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
-    }
-    return true;
-  };
+  // REMOVEMOS A FUNÇÃO requestStoragePermission POIS O EXPO CUIDA DISSO
 
   // Função para gerar HTML do pedido
   const generateOrderHTML = (pedido) => {
     const cliente = clientes.find(c => c.nomeFantasia === pedido.cliente) || { nomeFantasia: pedido.cliente, razaoSocial: '', cnpj: '', endereco: '', telefone: '', email: '' };
-    
+
     const subtotal = pedido.produtos.reduce((sum, produto) => sum + (produto.preco * produto.quantidade), 0);
-    
+
     let desconto = 0;
     if (pedido.desconto?.valor) {
       const valorDesconto = parseFloat(pedido.desconto.valor.toString().replace(',', '.')) || 0;
@@ -336,7 +319,7 @@ const PedidosScreen = () => {
             .status-processando { background-color: #2196F3; }
             .status-concluido { background-color: #4CAF50; }
             .status-cancelado { background-color: #F44336; }
-            
+
             @media print {
                 body { margin: 0; }
                 .header { margin-top: 0; }
@@ -362,7 +345,7 @@ const PedidosScreen = () => {
                 <div class="info-line"><strong>Telefone:</strong> ${cliente.telefone || 'N/A'}</div>
                 <div class="info-line"><strong>Email:</strong> ${cliente.email || 'N/A'}</div>
             </div>
-            
+
             <div class="info-section">
                 <div class="info-title">DADOS DO PEDIDO</div>
                 <div class="info-line"><strong>Data:</strong> ${new Date(pedido.data).toLocaleDateString('pt-BR')}</div>
@@ -413,13 +396,13 @@ const PedidosScreen = () => {
         <div class="payment-section">
             <div class="info-title">CONDIÇÕES DE PAGAMENTO</div>
             <div class="info-line"><strong>Método:</strong> ${metodoPagamento}</div>
-            
+
             ${pedido.metodoPagamento === 'boleto' && pedido.prazos?.length > 0 ? `
             <div class="installments">
                 <strong>Parcelas:</strong>
                 ${pedido.prazos.map((prazo, index) => `
                     <div class="installment-item">
-                        <strong>${index + 1}ª Parcela:</strong> ${prazo.dias} dias - ${prazo.porcentagem}% 
+                        <strong>${index + 1}ª Parcela:</strong> ${prazo.dias} dias - ${prazo.porcentagem}%
                         (R$ ${((pedido.total * parseFloat(prazo.porcentagem)) / 100).toFixed(2).replace('.', ',')})
                     </div>
                 `).join('')}
@@ -445,73 +428,49 @@ const PedidosScreen = () => {
     `;
   };
 
-  // Função para exportar pedido em PDF
+  // Função para exportar e compartilhar o PDF (AGORA COM EXPO-PRINT/EXPO-SHARING)
   const exportOrderToPDF = async (pedido) => {
     try {
-      // Solicitar permissões
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert('Erro', 'Permissão negada para salvar o arquivo.');
+      const htmlContent = generateOrderHTML(pedido);
+      const fileName = `NotaPedido_${pedido.id}_${new Date().getTime()}.pdf`;
+
+      // 1. Cria o PDF usando expo-print
+      const { uri } = await Print.printToFileAsync({
+        html: htmlContent,
+        base64: false,
+      });
+
+      if (!uri) {
+        Alert.alert('Erro', 'Não foi possível gerar o PDF.');
         return;
       }
 
-      // Gerar HTML
-      const htmlContent = generateOrderHTML(pedido);
-
-      // Configurações do PDF
-      const options = {
-        html: htmlContent,
-        fileName: `NotaPedido_${pedido.id}_${new Date().getTime()}`,
-        directory: 'Documents',
-        width: 612, // Largura A4 em pontos
-        height: 792, // Altura A4 em pontos
-        base64: false,
-      };
-
-      // Gerar PDF
-      const pdf = await RNHTMLtoPDF.convert(options);
-
-      if (pdf.filePath) {
-        Alert.alert(
-          'PDF Gerado com Sucesso!',
-          `O arquivo foi salvo em: ${pdf.filePath}`,
-          [
-            {
-              text: 'OK',
-              style: 'default'
-            },
-            {
-              text: 'Compartilhar',
-              onPress: () => sharePDF(pdf.filePath)
-            }
-          ]
-        );
+      // 2. Verifica se o compartilhamento está disponível e solicita
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Erro', 'Compartilhamento não disponível neste dispositivo.');
+        return;
       }
+
+      // 3. Compartilha o arquivo usando expo-sharing
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Compartilhar Nota de Pedido #${pedido.id}`,
+        UTI: 'com.adobe.pdf',
+        filename: fileName, // Renomeia o arquivo no diálogo de compartilhamento
+      });
+
     } catch (error) {
-      console.error('Erro ao gerar PDF:', error);
-      Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
+      console.error('Erro ao gerar/compartilhar PDF:', error);
+      Alert.alert('Erro', 'Não foi possível gerar ou compartilhar o PDF. Tente novamente.');
     }
   };
 
-  // Função para compartilhar o PDF
-  const sharePDF = async (filePath) => {
-    try {
-      const shareOptions = {
-        title: 'Compartilhar Nota de Pedido',
-        url: `file://${filePath}`,
-        type: 'application/pdf',
-      };
-
-      await Share.open(shareOptions);
-    } catch (error) {
-      console.error('Erro ao compartilhar PDF:', error);
-    }
-  };
+  // REMOVEMOS A FUNÇÃO sharePDF, POIS AGORA O EXPORT JÁ CHAMA O SHARING.
 
   // Adicionar produto ao pedido
   const addProductToOrder = (produto) => {
     const existingProduct = newOrder.produtos.find(p => p.id === produto.id);
-    
+
     if (existingProduct) {
       const updatedProducts = newOrder.produtos.map(p =>
         p.id === produto.id ? { ...p, quantidade: p.quantidade + 1 } : p
@@ -520,10 +479,10 @@ const PedidosScreen = () => {
     } else {
       setNewOrder({
         ...newOrder,
-        produtos: [...newOrder.produtos, { 
-          ...produto, 
+        produtos: [...newOrder.produtos, {
+          ...produto,
           quantidade: 1,
-          precoUnitario: produto.preco 
+          precoUnitario: produto.preco
         }]
       });
     }
@@ -673,7 +632,7 @@ const PedidosScreen = () => {
       style={styles.pedidoCard}
       onPress={() => {
         setSelectedOrder(item);
-        setShowOrderDetailsModal(true);
+        setShowOrderDetails(true);
       }}
     >
       <View style={styles.pedidoHeader}>
@@ -717,7 +676,7 @@ const PedidosScreen = () => {
           value={searchText}
           onChangeText={setSearchText}
         />
-        
+
         <View style={styles.filterContainer}>
           <Picker
             selectedValue={selectedStatus}
@@ -725,7 +684,7 @@ const PedidosScreen = () => {
             onValueChange={setSelectedStatus}
           >
             {statusOptions.map(status => (
-              <Picker.Item key={status} label={status} value={status} />
+              <Picker.Item key={status} label={getStatusText(status)} value={status} />
             ))}
           </Picker>
         </View>
@@ -751,7 +710,7 @@ const PedidosScreen = () => {
           <View style={styles.orderModalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Novo Pedido</Text>
-              
+
               {/* Seleção de Cliente */}
               <Text style={styles.sectionTitle}>Cliente *</Text>
               <View style={styles.clienteSection}>
@@ -811,7 +770,7 @@ const PedidosScreen = () => {
                           <Text style={styles.productName}>{produto.nome}</Text>
                           <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
                         </View>
-                        
+
                         <View style={styles.quantityControls}>
                           <TouchableOpacity
                             style={styles.quantityButton}
@@ -827,7 +786,7 @@ const PedidosScreen = () => {
                             <Plus size={16} color="#666" />
                           </TouchableOpacity>
                         </View>
-                        
+
                         <View style={styles.productTotal}>
                           <Text style={styles.productTotalText}>
                             R$ {(produto.preco * produto.quantidade).toFixed(2)}
@@ -849,7 +808,7 @@ const PedidosScreen = () => {
               {newOrder.produtos.length > 0 && (
                 <View style={styles.resumoFinanceiro}>
                   <Text style={styles.sectionTitle}>Resumo</Text>
-                  
+
                   <View style={styles.resumoLine}>
                     <Text style={styles.resumoLabel}>Subtotal:</Text>
                     <Text style={styles.resumoValue}>R$ {subtotal.toFixed(2)}</Text>
@@ -863,9 +822,9 @@ const PedidosScreen = () => {
                         <Picker
                           selectedValue={newOrder.desconto.tipo}
                           style={styles.descontoTipoPicker}
-                          onValueChange={(value) => 
+                          onValueChange={(value) =>
                             setNewOrder({
-                              ...newOrder, 
+                              ...newOrder,
                               desconto: { ...newOrder.desconto, tipo: value }
                             })
                           }
@@ -878,9 +837,9 @@ const PedidosScreen = () => {
                         style={styles.descontoInput}
                         placeholder={newOrder.desconto.tipo === 'percentual' ? '0' : '0,00'}
                         value={newOrder.desconto.valor}
-                        onChangeText={(value) => 
+                        onChangeText={(value) =>
                           setNewOrder({
-                            ...newOrder, 
+                            ...newOrder,
                             desconto: { ...newOrder.desconto, valor: value }
                           })
                         }
@@ -918,7 +877,7 @@ const PedidosScreen = () => {
                       ]}
                       onPress={() => {
                         setNewOrder({
-                          ...newOrder, 
+                          ...newOrder,
                           metodoPagamento: metodo.value,
                           prazos: metodo.value === 'boleto' ? [{ dias: '30', porcentagem: '100' }] : []
                         });
@@ -1074,8 +1033,8 @@ const PedidosScreen = () => {
               renderItem={({ item }) => (
                 <View style={styles.productSelectionItem}>
                   <Image
-                    source={{ 
-                      uri: item.imagem || 'https://via.placeholder.com/60x60/666666/white?text=Produto' 
+                    source={{
+                      uri: item.imagem || 'https://via.placeholder.com/60x60/666666/white?text=Produto'
                     }}
                     style={styles.productSelectionImage}
                   />
@@ -1132,23 +1091,23 @@ const PedidosScreen = () => {
                     onPress={() => exportOrderToPDF(selectedOrder)}
                   >
                     <Download size={20} color="#fff" />
-                    <Text style={styles.exportButtonText}>Exportar PDF</Text>
+                    <Text style={styles.exportButtonText}>Exportar/Compartilhar PDF</Text>
                   </TouchableOpacity>
                 </View>
-                
+
                 <Text style={styles.detailLabel}>Cliente:</Text>
                 <Text style={styles.detailValue}>{selectedOrder.cliente}</Text>
-                
+
                 <Text style={styles.detailLabel}>Data:</Text>
                 <Text style={styles.detailValue}>
                   {new Date(selectedOrder.data).toLocaleDateString('pt-BR')}
                 </Text>
-                
+
                 <Text style={styles.detailLabel}>Status:</Text>
                 <View style={[styles.statusBadge, { backgroundColor: getStatusColor(selectedOrder.status) }]}>
                   <Text style={styles.statusText}>{getStatusText(selectedOrder.status)}</Text>
                 </View>
-                
+
                 <Text style={styles.detailLabel}>Método de Pagamento:</Text>
                 <Text style={styles.detailValue}>
                   {metodoPagamentoOptions.find(m => m.value === selectedOrder.metodoPagamento)?.label}
@@ -1164,7 +1123,7 @@ const PedidosScreen = () => {
                     ))}
                   </>
                 )}
-                
+
                 <Text style={styles.detailLabel}>Produtos:</Text>
                 {selectedOrder.produtos?.map((produto, index) => (
                   <View key={index} style={styles.produtoDetail}>
@@ -1179,17 +1138,17 @@ const PedidosScreen = () => {
                   <>
                     <Text style={styles.detailLabel}>Desconto:</Text>
                     <Text style={styles.detailValue}>
-                      {selectedOrder.desconto.tipo === 'percentual' ? 
-                        `${selectedOrder.desconto.valor}%` : 
+                      {selectedOrder.desconto.tipo === 'percentual' ?
+                        `${selectedOrder.desconto.valor}%` :
                         `R$ ${selectedOrder.desconto.valor}`
                       }
                     </Text>
                   </>
                 )}
-                
+
                 <Text style={styles.detailLabel}>Total:</Text>
                 <Text style={styles.totalValue}>R$ {selectedOrder.total?.toFixed(2) || '0.00'}</Text>
-                
+
                 {selectedOrder.observacoes && (
                   <>
                     <Text style={styles.detailLabel}>Observações:</Text>
@@ -1199,7 +1158,7 @@ const PedidosScreen = () => {
 
                 <TouchableOpacity
                   style={styles.closeButton}
-                  onPress={() => setShowOrderDetailsModal(false)}
+                  onPress={() => setShowOrderDetails(false)}
                 >
                   <Text style={styles.closeButtonText}>Fechar</Text>
                 </TouchableOpacity>

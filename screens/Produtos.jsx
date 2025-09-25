@@ -10,13 +10,13 @@ import {
   Alert,
   Modal,
   ScrollView,
-  PermissionsAndroid,
-  Platform,
+  // PermissionsAndroid e Platform não são mais necessários para permissões de imagem no Expo
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+// Substituído por expo-image-picker:
+import * as ImagePicker from 'expo-image-picker'; 
 import { Picker } from '@react-native-picker/picker';
-import { Camera, Image as ImageIcon, Search, Plus, X, Edit3 } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Search, Plus, X } from 'lucide-react-native';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
@@ -39,7 +39,7 @@ const ProdutosScreen = () => {
   });
 
   const [novaVariacao, setNovaVariacao] = useState({
-    tipo: 'cor', // cor ou tamanho
+    tipo: 'cor', // 'cor' ou 'tamanho'
     valor: ''
   });
 
@@ -58,9 +58,9 @@ const ProdutosScreen = () => {
     try {
       const produtosData = await AsyncStorage.getItem('produtos');
       if (produtosData) {
-        const produtos = JSON.parse(produtosData);
-        setProdutos(produtos);
-        setFilteredProducts(produtos);
+        const produtosParsed = JSON.parse(produtosData);
+        setProdutos(produtosParsed);
+        setFilteredProducts(produtosParsed);
       }
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
@@ -92,142 +92,123 @@ const ProdutosScreen = () => {
   };
 
   const filterProducts = () => {
-    let filtered = produtos;
+    let filtered = produtos.slice();
 
     if (searchText) {
+      const q = searchText.toLowerCase();
       filtered = filtered.filter(produto =>
-        produto.nome.toLowerCase().includes(searchText.toLowerCase()) ||
-        produto.industria.toLowerCase().includes(searchText.toLowerCase())
+        (produto.nome || '').toLowerCase().includes(q) ||
+        (produto.industria || '').toLowerCase().includes(q)
       );
     }
 
     setFilteredProducts(filtered);
   };
 
-  // Solicitar permissões da câmera (Android)
-  const requestCameraPermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          {
-            title: 'Permissão de Câmera',
-            message: 'Este app precisa de acesso à câmera para tirar fotos dos produtos.',
-            buttonNeutral: 'Perguntar Depois',
-            buttonNegative: 'Cancelar',
-            buttonPositive: 'OK',
-          },
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // Converter imagem para base64
-  const convertImageToBase64 = (imageUri) => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.onload = function() {
-        const reader = new FileReader();
-        reader.onloadend = function() {
-          resolve(reader.result);
-        };
-        reader.readAsDataURL(xhr.response);
-      };
-      xhr.open('GET', imageUri);
-      xhr.responseType = 'blob';
-      xhr.send();
-    });
-  };
+  // ----------------------------------------------------------------
+  // FUNÇÕES DE IMAGEM CORRIGIDAS COM EXPO-IMAGE-PICKER
+  // ----------------------------------------------------------------
 
   // Abrir câmera
   const openCamera = async () => {
-    const hasPermission = await requestCameraPermission();
-    
-    if (!hasPermission) {
-      Alert.alert('Permissão Negada', 'Permissão de câmera é necessária para tirar fotos.');
+    setShowImagePickerModal(false);
+
+    // Solicitar permissão da câmera
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      Alert.alert(
+        'Permissão Negada',
+        'Precisamos da sua permissão para acessar a câmera e tirar fotos.'
+      );
       return;
     }
 
-    const options = {
-      mediaType: 'photo',
-      quality: 0.8,
-      maxWidth: 800,
-      maxHeight: 600,
-      includeBase64: true,
-    };
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true, // Importante para salvar o Base64
+      });
 
-    launchCamera(options, async (response) => {
-      setShowImagePickerModal(false);
-      
-      if (response.didCancel || response.error) {
-        return;
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        // Adicionar o prefixo do Base64 para ser usado como URI de imagem
+        const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
+        setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
       }
-
-      if (response.assets && response.assets[0]) {
-        const asset = response.assets[0];
-        try {
-          // Salvar a imagem como base64 para persistir nos dados
-          const base64Data = `data:${asset.type};base64,${asset.base64}`;
-          setNovoProduto({
-            ...novoProduto,
-            imagem: base64Data
-          });
-        } catch (error) {
-          console.error('Erro ao processar imagem:', error);
-          Alert.alert('Erro', 'Erro ao processar a imagem');
-        }
-      }
-    });
+    } catch (error) {
+      console.error('Erro ao acessar a câmera:', error);
+      Alert.alert('Erro', 'Ocorreu um erro ao tentar usar a câmera.');
+    }
   };
 
   // Abrir galeria
-  const openGallery = () => {
-    const options = {
-      mediaType: 'photo',
-      quality: 0.8,
-      maxWidth: 800,
-      maxHeight: 600,
-      includeBase64: true,
-    };
+  const openGallery = async () => {
+    setShowImagePickerModal(false);
 
-    launchImageLibrary(options, async (response) => {
-      setShowImagePickerModal(false);
-      
-      if (response.didCancel || response.error) {
-        return;
-      }
+    // Solicitar permissão da galeria
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert(
+        'Permissão Negada',
+        'Precisamos da sua permissão para acessar a galeria de imagens.'
+      );
+      return;
+    }
 
-      if (response.assets && response.assets[0]) {
-        const asset = response.assets[0];
-        try {
-          // Salvar a imagem como base64 para persistir nos dados
-          const base64Data = `data:${asset.type};base64,${asset.base64}`;
-          setNovoProduto({
-            ...novoProduto,
-            imagem: base64Data
-          });
-        } catch (error) {
-          console.error('Erro ao processar imagem:', error);
-          Alert.alert('Erro', 'Erro ao processar a imagem');
-        }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        base64: true, // Importante para salvar o Base64
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        // Adicionar o prefixo do Base64 para ser usado como URI de imagem
+        const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
+        setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
       }
-    });
+    } catch (error) {
+      console.error('Erro ao acessar a galeria:', error);
+      Alert.alert('Erro', 'Ocorreu um erro ao tentar acessar a galeria.');
+    }
   };
 
-  // Formatar valor monetário
+
+  // Remover imagem selecionada
+  const removeImage = () => {
+    Alert.alert(
+      'Remover Imagem',
+      'Deseja remover a imagem selecionada?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: () => setNovoProduto(prev => ({ ...prev, imagem: null }))
+        }
+      ]
+    );
+  };
+
+  // ----------------------------------------------------------------
+  // FIM DAS CORREÇÕES DE IMAGEM
+  // ----------------------------------------------------------------
+
+  // Formatar valor monetário (entrada como string '1234' => '12,34')
   const formatMoney = (value) => {
-    // Remove tudo que não é número
-    const numericValue = value.replace(/[^\d]/g, '');
-    
-    // Converte para número e divide por 100 para ter centavos
+    if (!value) return '';
+
+    const numericValue = String(value).replace(/[^\d]/g, '');
+    if (numericValue.length === 0) return '';
+
+    // Evita crash se o valor for muito grande
+    if (numericValue.length > 15) return formatMoney(numericValue.slice(0, 15));
+
     const numberValue = parseFloat(numericValue) / 100;
-    
-    // Formata como moeda brasileira
     return numberValue.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -236,14 +217,14 @@ const ProdutosScreen = () => {
 
   const handleMoneyInput = (value) => {
     const formatted = formatMoney(value);
-    setNovoProduto({
-      ...novoProduto,
-      preco: formatted
-    });
+    setNovoProduto(prev => ({ ...prev, preco: formatted }));
   };
 
   const parseMoneyValue = (formattedValue) => {
-    return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0;
+    if (!formattedValue) return 0;
+    const onlyNumbers = String(formattedValue).replace(/\./g, '').replace(',', '.');
+    const parsed = parseFloat(onlyNumbers);
+    return isNaN(parsed) ? 0 : parsed;
   };
 
   // Adicionar variação
@@ -253,7 +234,7 @@ const ProdutosScreen = () => {
       return;
     }
 
-    const variacaoExistente = novoProduto.variacoes.find(v => 
+    const variacaoExistente = novoProduto.variacoes.find(v =>
       v.tipo === novaVariacao.tipo && v.valor.toLowerCase() === novaVariacao.valor.toLowerCase()
     );
 
@@ -262,20 +243,19 @@ const ProdutosScreen = () => {
       return;
     }
 
-    setNovoProduto({
-      ...novoProduto,
-      variacoes: [...novoProduto.variacoes, { ...novaVariacao }]
-    });
+    setNovoProduto(prev => ({
+      ...prev,
+      variacoes: [...prev.variacoes, { ...novaVariacao }]
+    }));
 
     setNovaVariacao({ tipo: 'cor', valor: '' });
   };
 
   // Remover variação
   const removerVariacao = (index) => {
-    const novasVariacoes = novoProduto.variacoes.filter((_, i) => i !== index);
-    setNovoProduto({
-      ...novoProduto,
-      variacoes: novasVariacoes
+    setNovoProduto(prev => {
+      const novas = prev.variacoes.filter((_, i) => i !== index);
+      return { ...prev, variacoes: novas };
     });
   };
 
@@ -357,18 +337,20 @@ const ProdutosScreen = () => {
         setSelectedProduct(item);
         setShowProductModal(true);
       }}
+      activeOpacity={0.8}
     >
-      <Image 
-        source={{ 
-          uri: item.imagem || 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem' 
-        }} 
-        style={styles.productImage} 
+      <Image
+        source={{
+          uri: item.imagem || 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem'
+        }}
+        style={styles.productImage}
+        resizeMode="cover"
       />
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
         <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
         <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
-        {item.variacoes.length > 0 && (
+        {item.variacoes && item.variacoes.length > 0 && (
           <Text style={styles.productVariations}>
             {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
           </Text>
@@ -409,7 +391,7 @@ const ProdutosScreen = () => {
       <FlatList
         data={filteredProducts}
         renderItem={renderProductCard}
-        keyExtractor={item => item.id.toString()}
+        keyExtractor={item => String(item.id)}
         numColumns={2}
         contentContainerStyle={styles.productsList}
         showsVerticalScrollIndicator={false}
@@ -428,25 +410,26 @@ const ProdutosScreen = () => {
               {selectedProduct && (
                 <>
                   <Image
-                    source={{ 
-                      uri: selectedProduct.imagem || 'https://via.placeholder.com/200x200/666666/white?text=Sem+Imagem' 
+                    source={{
+                      uri: selectedProduct.imagem || 'https://via.placeholder.com/200x200/666666/white?text=Sem+Imagem'
                     }}
                     style={styles.productDetailImage}
+                    resizeMode="cover"
                   />
                   <Text style={styles.productDetailName}>{selectedProduct.nome}</Text>
                   <Text style={styles.productDetailCompany}>{selectedProduct.industria}</Text>
-                  
+
                   <View style={styles.priceContainer}>
                     <Text style={styles.priceLabel}>Preço:</Text>
                     <Text style={styles.priceValue}>R$ {selectedProduct.preco.toFixed(2)}</Text>
                   </View>
 
-                  {selectedProduct.descricao && (
+                  {selectedProduct.descricao ? (
                     <View style={styles.descriptionContainer}>
                       <Text style={styles.descriptionLabel}>Descrição:</Text>
                       <Text style={styles.descriptionValue}>{selectedProduct.descricao}</Text>
                     </View>
-                  )}
+                  ) : null}
 
                   {selectedProduct.variacoes && selectedProduct.variacoes.length > 0 && (
                     <View style={styles.variationsContainer}>
@@ -466,7 +449,7 @@ const ProdutosScreen = () => {
                     Cadastrado em: {new Date(selectedProduct.dataCadastro).toLocaleDateString('pt-BR')}
                   </Text>
 
-                  <View style={styles.modalButtons}>
+                  <View style={styles.modalButtonsRow}>
                     <TouchableOpacity
                       style={styles.deleteButton}
                       onPress={() => deleteProduto(selectedProduct.id)}
@@ -493,15 +476,21 @@ const ProdutosScreen = () => {
           <View style={styles.addProductModalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Cadastrar Novo Produto</Text>
-              
+
               {/* Image Section */}
               <Text style={styles.inputLabel}>Imagem do Produto</Text>
               <TouchableOpacity
                 style={styles.imageSelector}
                 onPress={() => setShowImagePickerModal(true)}
+                activeOpacity={0.8}
               >
                 {novoProduto.imagem ? (
-                  <Image source={{ uri: novoProduto.imagem }} style={styles.selectedImage} />
+                  <View style={styles.imageContainer}>
+                    <Image source={{ uri: novoProduto.imagem }} style={styles.selectedImage} resizeMode="cover" />
+                    <TouchableOpacity style={styles.removeImageButton} onPress={removeImage}>
+                      <X size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   <View style={styles.imagePlaceholder}>
                     <ImageIcon size={40} color="#999" />
@@ -509,15 +498,16 @@ const ProdutosScreen = () => {
                   </View>
                 )}
               </TouchableOpacity>
-              
+
               <Text style={styles.inputLabel}>Nome do Produto *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="Digite o nome do produto"
                 value={novoProduto.nome}
-                onChangeText={(text) => setNovoProduto({...novoProduto, nome: text})}
+                onChangeText={(text) => setNovoProduto(prev => ({ ...prev, nome: text }))}
+                placeholderTextColor="#999"
               />
-              
+
               <Text style={styles.inputLabel}>Preço *</Text>
               <TextInput
                 style={styles.input}
@@ -525,21 +515,22 @@ const ProdutosScreen = () => {
                 value={novoProduto.preco}
                 onChangeText={handleMoneyInput}
                 keyboardType="numeric"
+                placeholderTextColor="#999"
               />
 
               <Text style={styles.inputLabel}>Indústria *</Text>
               <View style={styles.pickerContainer}>
                 <Picker
                   selectedValue={novoProduto.industria}
-                  onValueChange={(value) => setNovoProduto({...novoProduto, industria: value})}
+                  onValueChange={(value) => setNovoProduto(prev => ({ ...prev, industria: value }))}
                   style={styles.picker}
                 >
                   <Picker.Item label="Selecione uma indústria" value="" />
                   {industrias.map(industria => (
-                    <Picker.Item 
-                      key={industria.id} 
-                      label={industria.nome} 
-                      value={industria.nome} 
+                    <Picker.Item
+                      key={industria.id ?? industria.nome}
+                      label={industria.nome}
+                      value={industria.nome}
                     />
                   ))}
                 </Picker>
@@ -550,33 +541,36 @@ const ProdutosScreen = () => {
                 style={[styles.input, styles.textArea]}
                 placeholder="Descrição do produto (opcional)"
                 value={novoProduto.descricao}
-                onChangeText={(text) => setNovoProduto({...novoProduto, descricao: text})}
+                onChangeText={(text) => setNovoProduto(prev => ({ ...prev, descricao: text }))}
                 multiline
                 numberOfLines={3}
+                placeholderTextColor="#999"
+                textAlignVertical="top"
               />
 
               {/* Variações Section */}
               <Text style={styles.inputLabel}>Variações (Cores/Tamanhos)</Text>
-              
+
               <View style={styles.variationInputContainer}>
                 <View style={styles.variationTypeContainer}>
                   <Picker
                     selectedValue={novaVariacao.tipo}
-                    onValueChange={(value) => setNovaVariacao({...novaVariacao, tipo: value})}
+                    onValueChange={(value) => setNovaVariacao(prev => ({ ...prev, tipo: value }))}
                     style={styles.variationTypePicker}
                   >
                     <Picker.Item label="Cor" value="cor" />
                     <Picker.Item label="Tamanho" value="tamanho" />
                   </Picker>
                 </View>
-                
+
                 <TextInput
                   style={[styles.input, styles.variationInput]}
                   placeholder={novaVariacao.tipo === 'cor' ? 'Ex: Azul, Vermelho' : 'Ex: P, M, G'}
                   value={novaVariacao.valor}
-                  onChangeText={(text) => setNovaVariacao({...novaVariacao, valor: text})}
+                  onChangeText={(text) => setNovaVariacao(prev => ({ ...prev, valor: text }))}
+                  placeholderTextColor="#999"
                 />
-                
+
                 <TouchableOpacity style={styles.addVariationButton} onPress={adicionarVariacao}>
                   <Plus size={20} color="#fff" />
                 </TouchableOpacity>
@@ -601,15 +595,26 @@ const ProdutosScreen = () => {
                   ))}
                 </View>
               )}
-              
-              <View style={styles.modalButtons}>
+
+              <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
                   style={styles.cancelButton}
-                  onPress={() => setShowAddProductModal(false)}
+                  onPress={() => {
+                    setShowAddProductModal(false);
+                    // Resetar formulário
+                    setNovoProduto({
+                      nome: '',
+                      preco: '',
+                      imagem: null,
+                      industria: '',
+                      descricao: '',
+                      variacoes: []
+                    });
+                  }}
                 >
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={styles.saveButton}
                   onPress={salvarProduto}
@@ -627,17 +632,17 @@ const ProdutosScreen = () => {
         <View style={styles.modalOverlay}>
           <View style={styles.imagePickerModal}>
             <Text style={styles.modalTitle}>Selecionar Imagem</Text>
-            
+
             <TouchableOpacity style={styles.imagePickerOption} onPress={openCamera}>
               <Camera size={24} color="#007AFF" />
               <Text style={styles.imagePickerText}>Tirar Foto</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity style={styles.imagePickerOption} onPress={openGallery}>
               <ImageIcon size={24} color="#007AFF" />
               <Text style={styles.imagePickerText}>Escolher da Galeria</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => setShowImagePickerModal(false)}
@@ -677,6 +682,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderWidth: 1,
     borderColor: '#ddd',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   searchIcon: {
     marginRight: 10,
@@ -696,6 +706,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   addButtonText: {
     color: '#fff',
@@ -704,26 +719,28 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   productsList: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 8,
     paddingBottom: 100,
   },
   productCard: {
     flex: 1,
     backgroundColor: '#fff',
     borderRadius: 10,
-    margin: 5,
+    margin: 8,
     padding: 10,
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
+    minWidth: 0,
   },
   productImage: {
     width: '100%',
     height: 120,
     borderRadius: 8,
     marginBottom: 8,
+    backgroundColor: '#f0f0f0',
   },
   productInfo: {
     alignItems: 'center',
@@ -746,7 +763,7 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     marginBottom: 2,
   },
-  productMargin: {
+  productVariations: {
     fontSize: 12,
     color: '#007AFF',
     fontWeight: '500',
@@ -782,6 +799,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignSelf: 'center',
     marginBottom: 15,
+    backgroundColor: '#f0f0f0',
   },
   productDetailName: {
     fontSize: 24,
@@ -802,29 +820,67 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 20,
   },
-  priceItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
   priceLabel: {
     fontSize: 16,
     color: '#666',
+    marginBottom: 5,
   },
   priceValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  priceValueSale: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#4CAF50',
   },
-  marginValue: {
+  descriptionContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+  },
+  descriptionLabel: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#333',
+    marginBottom: 8,
+  },
+  descriptionValue: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+  },
+  variationsContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+  },
+  variationsLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  variationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  variationType: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+    marginRight: 8,
+    minWidth: 60,
+  },
+  variationValue: {
+    fontSize: 14,
+    color: '#333',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   dateText: {
     fontSize: 14,
@@ -862,6 +918,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd',
     marginBottom: 10,
+    color: '#333',
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   imageSelector: {
     backgroundColor: '#f8f8f8',
@@ -873,11 +934,29 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  imageContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
   },
   selectedImage: {
     width: '100%',
     height: '100%',
     borderRadius: 6,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#f44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
   },
   imagePlaceholder: {
     alignItems: 'center',
@@ -886,27 +965,96 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 14,
     color: '#999',
+    textAlign: 'center',
   },
-  empresaSelector: {
+  pickerContainer: {
     backgroundColor: '#f8f8f8',
     borderRadius: 8,
-    padding: 12,
     borderWidth: 1,
     borderColor: '#ddd',
-    marginBottom: 20,
+    marginBottom: 10,
   },
-  empresaSelectorText: {
-    fontSize: 16,
+  picker: {
+    height: 50,
     color: '#333',
   },
-  placeholder: {
-    color: '#999',
+  variationInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginBottom: 15,
+  },
+  variationTypeContainer: {
+    flex: 0.3,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  variationTypePicker: {
+    height: 50,
+    color: '#333',
+  },
+  variationInput: {
+    flex: 1,
+    marginBottom: 0,
+    marginLeft: 8,
+    marginRight: 8,
+  },
+  addVariationButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+  },
+  addedVariationsContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 15,
+  },
+  addedVariationsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  addedVariationItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  addedVariationText: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
+  removeVariationButton: {
+    backgroundColor: '#f44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   imagePickerModal: {
     backgroundColor: '#fff',
     borderRadius: 15,
     padding: 20,
     width: '80%',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   imagePickerOption: {
     flexDirection: 'row',
@@ -920,74 +1068,66 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 15,
   },
-  empresaModalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 20,
-    margin: 20,
-    maxHeight: '70%',
-    width: '90%',
-  },
-  empresaList: {
-    maxHeight: 300,
-  },
-  empresaOption: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  empresaOptionText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  modalButtons: {
+  modalButtonsRow: {
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
     marginTop: 20,
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#ccc',
+    backgroundColor: '#e0e0e0',
     borderRadius: 8,
     padding: 15,
+    marginRight: 8,
+    elevation: 2,
   },
   cancelButtonText: {
     textAlign: 'center',
     color: '#333',
     fontWeight: 'bold',
+    fontSize: 16,
   },
   saveButton: {
     flex: 1,
     backgroundColor: '#4CAF50',
     borderRadius: 8,
     padding: 15,
+    marginLeft: 8,
+    elevation: 3,
   },
   saveButtonText: {
     textAlign: 'center',
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
   },
   deleteButton: {
     flex: 1,
     backgroundColor: '#f44336',
     borderRadius: 8,
     padding: 15,
+    marginRight: 8,
+    elevation: 3,
   },
   deleteButtonText: {
     textAlign: 'center',
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
   },
   closeButton: {
     flex: 1,
     backgroundColor: '#007AFF',
     borderRadius: 8,
     padding: 15,
+    marginLeft: 8,
+    elevation: 3,
   },
   closeButtonText: {
     textAlign: 'center',
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 
