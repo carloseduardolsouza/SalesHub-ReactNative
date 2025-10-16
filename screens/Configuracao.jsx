@@ -9,8 +9,11 @@ import {
   Switch,
   Modal,
   TextInput,
+  Image, // Adicionado para exibir a logo
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+// Importação de placeholder, substituir pela sua lib de imagem real
+// import * as ImagePicker from 'expo-image-picker'; 
 
 const ConfiguracaoScreen = () => {
   const [settings, setSettings] = useState({
@@ -18,10 +21,13 @@ const ConfiguracaoScreen = () => {
     notificacoesClientes: true,
     temaEscuro: false,
     moedaPadrao: 'BRL',
+    // Novos campos adicionados/atualizados
     empresaNome: '',
+    empresaCNPJ: '', 
     empresaEmail: '',
     empresaTelefone: '',
     empresaEndereco: '',
+    empresaLogoUri: null, // URI para armazenar o caminho da logo
   });
 
   const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -36,7 +42,8 @@ const ConfiguracaoScreen = () => {
     try {
       const savedSettings = await AsyncStorage.getItem('settings');
       if (savedSettings) {
-        setSettings({ ...settings, ...JSON.parse(savedSettings) });
+        // Combina as configurações salvas com as configurações padrão
+        setSettings((prevSettings) => ({ ...prevSettings, ...JSON.parse(savedSettings) }));
       }
     } catch (error) {
       console.error('Erro ao carregar configurações:', error);
@@ -58,7 +65,45 @@ const ConfiguracaoScreen = () => {
     saveSettings(newSettings);
   };
 
+  // --- Funções de Manipulação de Imagem (Placeholder) ---
+  const handleImagePicker = async () => {
+    // 
+    // !!! IMPLEMENTAÇÃO REAL NECESSITA DE UMA BIBLIOTECA EXTERNA !!!
+    // Exemplo com 'react-native-image-picker' ou 'expo-image-picker'
+    // 
+    Alert.alert(
+      'Selecione a Logo',
+      'Em um aplicativo real, você usaria uma biblioteca de seleção de imagens (ex: Expo Image Picker) para escolher uma foto.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Simular Seleção', 
+          onPress: () => {
+            // Simulação de que uma URI foi selecionada
+            const fakeUri = 'https://via.placeholder.com/150/2196F3/FFFFFF?Text=Logo'; 
+            setTempCompanyData(prev => ({ ...prev, logoUri: fakeUri }));
+          }
+        },
+      ]
+    );
+
+    // Exemplo de código (Com Expo Image Picker):
+    /*
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 1], // Ajuste o aspect ratio ideal para sua logo
+      quality: 0.5,
+    });
+
+    if (!result.cancelled) {
+      setTempCompanyData(prev => ({ ...prev, logoUri: result.uri }));
+    }
+    */
+  };
+
   const exportData = async () => {
+    // ... (função exportData original, sem alterações)
     try {
       const clientes = await AsyncStorage.getItem('clientes');
       const produtos = await AsyncStorage.getItem('produtos');
@@ -71,7 +116,7 @@ const ConfiguracaoScreen = () => {
         dataExportacao: new Date().toISOString(),
       };
 
-      // Em um app real, você implementaria a exportação para arquivo
+      // Em um app real, você implementaria a exportação para arquivo (ex: CSV, JSON, SHARE API)
       Alert.alert(
         'Dados Exportados',
         `Dados exportados com sucesso!\n\nClientes: ${data.clientes.length}\nProdutos: ${data.produtos.length}\nPedidos: ${data.pedidos.length}`,
@@ -84,6 +129,7 @@ const ConfiguracaoScreen = () => {
   };
 
   const clearAllData = () => {
+    // ... (função clearAllData original, sem alterações)
     Alert.alert(
       'Limpar Todos os Dados',
       'Esta ação irá apagar todos os dados do aplicativo. Esta ação não pode ser desfeita. Deseja continuar?',
@@ -94,7 +140,11 @@ const ConfiguracaoScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.multiRemove(['clientes', 'produtos', 'pedidos']);
+              await AsyncStorage.multiRemove(['clientes', 'produtos', 'pedidos', 'settings']); // Limpar settings tbm
+              setSettings({ // Resetar o estado local
+                notificacoesPedidos: true, notificacoesClientes: true, temaEscuro: false, moedaPadrao: 'BRL',
+                empresaNome: '', empresaCNPJ: '', empresaEmail: '', empresaTelefone: '', empresaEndereco: '', empresaLogoUri: null,
+              });
               Alert.alert('Sucesso', 'Todos os dados foram limpos');
             } catch (error) {
               Alert.alert('Erro', 'Erro ao limpar dados');
@@ -108,10 +158,13 @@ const ConfiguracaoScreen = () => {
   const saveCompanyData = () => {
     const newSettings = {
       ...settings,
-      empresaNome: tempCompanyData.nome || settings.empresaNome,
-      empresaEmail: tempCompanyData.email || settings.empresaEmail,
-      empresaTelefone: tempCompanyData.telefone || settings.empresaTelefone,
-      empresaEndereco: tempCompanyData.endereco || settings.empresaEndereco,
+      // Usar temp data, ou o valor antigo se não foi alterado
+      empresaNome: tempCompanyData.nome !== undefined ? tempCompanyData.nome : settings.empresaNome,
+      empresaCNPJ: tempCompanyData.cnpj !== undefined ? tempCompanyData.cnpj : settings.empresaCNPJ,
+      empresaEmail: tempCompanyData.email !== undefined ? tempCompanyData.email : settings.empresaEmail,
+      empresaTelefone: tempCompanyData.telefone !== undefined ? tempCompanyData.telefone : settings.empresaTelefone,
+      empresaEndereco: tempCompanyData.endereco !== undefined ? tempCompanyData.endereco : settings.empresaEndereco,
+      empresaLogoUri: tempCompanyData.logoUri !== undefined ? tempCompanyData.logoUri : settings.empresaLogoUri,
     };
     saveSettings(newSettings);
     setShowCompanyModal(false);
@@ -120,7 +173,7 @@ const ConfiguracaoScreen = () => {
   };
 
   const SettingItem = ({ title, subtitle, rightComponent, onPress }) => (
-    <TouchableOpacity style={styles.settingItem} onPress={onPress}>
+    <TouchableOpacity style={styles.settingItem} onPress={onPress} disabled={!onPress} activeOpacity={onPress ? 0.7 : 1}>
       <View style={styles.settingContent}>
         <Text style={styles.settingTitle}>{title}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
@@ -195,9 +248,11 @@ const ConfiguracaoScreen = () => {
           onPress={() => {
             setTempCompanyData({
               nome: settings.empresaNome,
+              cnpj: settings.empresaCNPJ,
               email: settings.empresaEmail,
               telefone: settings.empresaTelefone,
               endereco: settings.empresaEndereco,
+              logoUri: settings.empresaLogoUri, // Carrega URI atual
             });
             setShowCompanyModal(true);
           }}
@@ -243,8 +298,18 @@ const ConfiguracaoScreen = () => {
       <Modal visible={showCompanyModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Dados da Empresa</Text>
+              
+              {/* Logo Upload Section */}
+              <Text style={styles.inputLabel}>Logo da Empresa</Text>
+              <TouchableOpacity style={styles.logoPicker} onPress={handleImagePicker}>
+                {tempCompanyData.logoUri ? (
+                  <Image source={{ uri: tempCompanyData.logoUri }} style={styles.logoPreview} resizeMode="contain" />
+                ) : (
+                  <Text style={styles.logoPlaceholder}>Clique para selecionar a Logo</Text>
+                )}
+              </TouchableOpacity>
               
               <Text style={styles.inputLabel}>Nome da Empresa</Text>
               <TextInput
@@ -252,6 +317,15 @@ const ConfiguracaoScreen = () => {
                 placeholder="Nome da sua empresa"
                 value={tempCompanyData.nome}
                 onChangeText={(text) => setTempCompanyData({...tempCompanyData, nome: text})}
+              />
+              
+              <Text style={styles.inputLabel}>CNPJ (Opcional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="00.000.000/0000-00"
+                value={tempCompanyData.cnpj}
+                onChangeText={(text) => setTempCompanyData({...tempCompanyData, cnpj: text})}
+                keyboardType="numeric"
               />
               
               <Text style={styles.inputLabel}>Email</Text>
@@ -264,7 +338,7 @@ const ConfiguracaoScreen = () => {
                 autoCapitalize="none"
               />
               
-              <Text style={styles.inputLabel}>Telefone</Text>
+              <Text style={styles.inputLabel}>Telefone/Whatsapp</Text>
               <TextInput
                 style={styles.input}
                 placeholder="(11) 99999-9999"
@@ -496,6 +570,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#fff',
     fontWeight: 'bold',
+  },
+  // NOVOS ESTILOS PARA LOGO
+  logoPicker: {
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  logoPlaceholder: {
+    color: '#999',
+    fontSize: 16,
+  },
+  logoPreview: {
+    width: '100%',
+    height: '100%',
   },
 });
 

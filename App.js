@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Importar todas as telas
 import HomeScreen from './screens/Home';
 import ClientesScreen from './screens/Clientes';
-import PedidosScreen from './screens/Pedidos';
+import PedidosScreen from './screens/PedidosScreen/index';
 import ProdutosScreen from './screens/Produtos';
 import ConfiguracaoScreen from './screens/Configuracao';
 import IndustriasScreen from './screens/Industrias';

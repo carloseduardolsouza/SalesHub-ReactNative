@@ -11,7 +11,7 @@ import {
   Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Search, Filter, Plus, Check, Building, Phone, Mail } from 'lucide-react-native';
+import { Search, Filter, Plus, Check, Building, Phone, Mail, Edit2 } from 'lucide-react-native'; // Importei Edit2
 
 const IndustriasScreen = ({ navigation }) => {
   // Estados
@@ -20,11 +20,22 @@ const IndustriasScreen = ({ navigation }) => {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCadastroModal, setShowCadastroModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false); // Novo estado para o modal de edição
   const [selectedIndustria, setSelectedIndustria] = useState(null);
   const [selectedFields, setSelectedFields] = useState(['nome', 'cnpj', 'telefoneComercial']);
 
   // Estado do formulário de cadastro
   const [novaIndustria, setNovaIndustria] = useState({
+    cnpj: '',
+    nome: '',
+    telefoneAssistencia: '',
+    telefoneComercial: '',
+    email: ''
+  });
+
+  // Estado do formulário de edição (inicializado vazio, será preenchido ao clicar em editar)
+  const [industriaEmEdicao, setIndustriaEmEdicao] = useState({
+    id: null,
     cnpj: '',
     nome: '',
     telefoneAssistencia: '',
@@ -85,7 +96,8 @@ const IndustriasScreen = ({ navigation }) => {
         // Se parece com CNPJ, busca apenas no CNPJ
         const cnpjNumbers = industria.cnpj.replace(/\D/g, '');
         const searchNumbers = searchText.replace(/\D/g, '');
-        return cnpjNumbers.includes(searchNumbers);
+        // Usar includes para ser mais flexível (parte do CNPJ)
+        return cnpjNumbers.includes(searchNumbers); 
       } else {
         // Se não parece com CNPJ, busca no nome
         return industria.nome.toLowerCase().includes(searchLower);
@@ -110,7 +122,7 @@ const IndustriasScreen = ({ navigation }) => {
   const formatCNPJ = (cnpj) => {
     const cleaned = cnpj.replace(/\D/g, '');
     if (cleaned.length <= 14) {
-      return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+      return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5').substring(0, 18);
     }
     return cnpj;
   };
@@ -118,10 +130,22 @@ const IndustriasScreen = ({ navigation }) => {
   // Função para formatar telefone
   const formatTelefone = (telefone) => {
     const cleaned = telefone.replace(/\D/g, '');
-    if (cleaned.length <= 11) {
-      return cleaned.replace(/(\d{2})(\d{4,5})(\d{4})/, '($1) $2-$3');
+    let formatted = cleaned;
+
+    if (cleaned.length > 2 && cleaned.length <= 6) {
+      formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2)}`;
+    } else if (cleaned.length === 10) {
+      formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6, 10)}`;
+    } else if (cleaned.length === 11) {
+      formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
+    } else if (cleaned.length > 11) {
+      formatted = cleaned.substring(0, 11);
+      formatted = `(${formatted.substring(0, 2)}) ${formatted.substring(2, 7)}-${formatted.substring(7, 11)}`;
+    } else if (cleaned.length <= 2) {
+      formatted = cleaned;
     }
-    return telefone;
+    
+    return formatted.substring(0, 15);
   };
 
   // Função para validar email
@@ -130,6 +154,8 @@ const IndustriasScreen = ({ navigation }) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
+
+  // Funções de Cadastro
 
   // Função para salvar nova indústria
   const salvarIndustria = async () => {
@@ -192,6 +218,85 @@ const IndustriasScreen = ({ navigation }) => {
     }
   };
 
+  // Funções de Edição
+
+  // 1. Iniciar Edição (chamada do Modal de Detalhes)
+  const iniciarEdicao = () => {
+    if (selectedIndustria) {
+      // Pré-preencher o estado de edição com os dados atuais
+      setIndustriaEmEdicao({
+        id: selectedIndustria.id,
+        cnpj: selectedIndustria.cnpj,
+        nome: selectedIndustria.nome,
+        telefoneComercial: selectedIndustria.telefoneComercial,
+        telefoneAssistencia: selectedIndustria.telefoneAssistencia,
+        email: selectedIndustria.email,
+      });
+      setShowDetailsModal(false); // Fecha o modal de detalhes
+      setShowEditModal(true);     // Abre o modal de edição
+    }
+  };
+
+  // 2. Salvar Edição
+  const salvarEdicao = async () => {
+    // Validações obrigatórias
+    if (!industriaEmEdicao.cnpj || !industriaEmEdicao.nome) {
+      Alert.alert('Erro', 'CNPJ e Nome são obrigatórios!');
+      return;
+    }
+
+    // Validar email se preenchido
+    if (industriaEmEdicao.email && !isValidEmail(industriaEmEdicao.email)) {
+      Alert.alert('Erro', 'Email inválido!');
+      return;
+    }
+
+    const cnpjLimpo = industriaEmEdicao.cnpj.replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      Alert.alert('Erro', 'CNPJ deve ter 14 dígitos!');
+      return;
+    }
+    
+    // Verificar se CNPJ já existe em OUTRA indústria
+    const industriaExistente = industrias.find(industria => 
+      industria.id !== industriaEmEdicao.id && industria.cnpj.replace(/\D/g, '') === cnpjLimpo
+    );
+
+    if (industriaExistente) {
+      Alert.alert('Erro', 'CNPJ já cadastrado em outra indústria!');
+      return;
+    }
+
+    try {
+      const industriaAtualizada = {
+        ...selectedIndustria, // Mantém dados como dataCadastro
+        id: industriaEmEdicao.id,
+        nome: industriaEmEdicao.nome.trim(),
+        cnpj: formatCNPJ(industriaEmEdicao.cnpj),
+        telefoneComercial: industriaEmEdicao.telefoneComercial ? formatTelefone(industriaEmEdicao.telefoneComercial) : '',
+        telefoneAssistencia: industriaEmEdicao.telefoneAssistencia ? formatTelefone(industriaEmEdicao.telefoneAssistencia) : '',
+        email: industriaEmEdicao.email.trim().toLowerCase(),
+        dataEdicao: new Date().toISOString() // Adiciona data de edição
+      };
+
+      // Mapeia e substitui a indústria editada
+      const industriasAtualizadas = industrias.map(i => 
+        i.id === industriaAtualizada.id ? industriaAtualizada : i
+      );
+
+      await saveIndustrias(industriasAtualizadas);
+
+      // Atualiza a indústria selecionada para o modal de detalhes (se o usuário for reabri-lo)
+      setSelectedIndustria(industriaAtualizada); 
+
+      setShowEditModal(false);
+      Alert.alert('Sucesso', 'Indústria atualizada com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar edição:', error);
+      Alert.alert('Erro', 'Erro ao atualizar indústria');
+    }
+  };
+  
   // Função para excluir indústria
   const excluirIndustria = (industriaId) => {
     Alert.alert(
@@ -207,6 +312,7 @@ const IndustriasScreen = ({ navigation }) => {
               const industriasAtualizadas = industrias.filter(i => i.id !== industriaId);
               await saveIndustrias(industriasAtualizadas);
               setShowDetailsModal(false);
+              setSelectedIndustria(null); // Limpa a seleção
               Alert.alert('Sucesso', 'Indústria excluída com sucesso!');
             } catch (error) {
               Alert.alert('Erro', 'Erro ao excluir indústria');
@@ -241,8 +347,13 @@ const IndustriasScreen = ({ navigation }) => {
     <View style={styles.tableHeader}>
       {selectedFields.map(fieldKey => {
         const field = availableFields.find(f => f.key === fieldKey);
+        // Calcula a flexibilidade da coluna (ex: CNPJ um pouco maior)
+        const cellStyle = fieldKey === 'cnpj' 
+          ? {...styles.tableCell, flex: 1.2} 
+          : styles.tableCell; 
+
         return (
-          <View key={fieldKey} style={styles.tableCell}>
+          <View key={fieldKey} style={cellStyle}>
             <Text style={styles.headerText}>{field?.label}</Text>
           </View>
         );
@@ -312,7 +423,7 @@ const IndustriasScreen = ({ navigation }) => {
         />
       </View>
 
-      {/* Modal de Filtros */}
+      {/* Modal de Filtros (Sem alterações) */}
       <Modal
         visible={showFilterModal}
         animationType="slide"
@@ -360,7 +471,7 @@ const IndustriasScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Modal de Cadastro */}
+      {/* Modal de Cadastro (Sem alterações de lógica, apenas de estilo) */}
       <Modal
         visible={showCadastroModal}
         animationType="slide"
@@ -427,7 +538,16 @@ const IndustriasScreen = ({ navigation }) => {
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={styles.cancelButton}
-                  onPress={() => setShowCadastroModal(false)}
+                  onPress={() => {
+                    setShowCadastroModal(false);
+                    setNovaIndustria({ // Limpa o formulário ao cancelar
+                      cnpj: '',
+                      nome: '',
+                      telefoneAssistencia: '',
+                      telefoneComercial: '',
+                      email: ''
+                    });
+                  }}
                 >
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
@@ -444,7 +564,7 @@ const IndustriasScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Modal de Detalhes */}
+      {/* Modal de Detalhes (Adicionado botão Editar) */}
       <Modal
         visible={showDetailsModal}
         animationType="slide"
@@ -464,7 +584,7 @@ const IndustriasScreen = ({ navigation }) => {
                     <Text style={styles.detailCnpj}>{selectedIndustria.cnpj}</Text>
                   </View>
 
-                  {selectedIndustria.telefoneComercial && (
+                  {selectedIndustria.telefoneComercial ? (
                     <View style={styles.contactItem}>
                       <Phone size={20} color="#4CAF50" />
                       <View style={styles.contactInfo}>
@@ -472,9 +592,9 @@ const IndustriasScreen = ({ navigation }) => {
                         <Text style={styles.contactValue}>{selectedIndustria.telefoneComercial}</Text>
                       </View>
                     </View>
-                  )}
+                  ) : null}
 
-                  {selectedIndustria.telefoneAssistencia && (
+                  {selectedIndustria.telefoneAssistencia ? (
                     <View style={styles.contactItem}>
                       <Phone size={20} color="#FF9800" />
                       <View style={styles.contactInfo}>
@@ -482,9 +602,9 @@ const IndustriasScreen = ({ navigation }) => {
                         <Text style={styles.contactValue}>{selectedIndustria.telefoneAssistencia}</Text>
                       </View>
                     </View>
-                  )}
+                  ) : null}
 
-                  {selectedIndustria.email && (
+                  {selectedIndustria.email ? (
                     <View style={styles.contactItem}>
                       <Mail size={20} color="#9C27B0" />
                       <View style={styles.contactInfo}>
@@ -492,10 +612,11 @@ const IndustriasScreen = ({ navigation }) => {
                         <Text style={styles.contactValue}>{selectedIndustria.email}</Text>
                       </View>
                     </View>
-                  )}
+                  ) : null}
 
                   <Text style={styles.cadastroDate}>
                     Cadastrado em: {new Date(selectedIndustria.dataCadastro).toLocaleDateString('pt-BR')}
+                    {selectedIndustria.dataEdicao && ` (Editado em: ${new Date(selectedIndustria.dataEdicao).toLocaleDateString('pt-BR')})`}
                   </Text>
 
                   <View style={styles.modalButtons}>
@@ -507,6 +628,14 @@ const IndustriasScreen = ({ navigation }) => {
                     </TouchableOpacity>
                     
                     <TouchableOpacity
+                      style={styles.editButton} // Novo botão de edição
+                      onPress={iniciarEdicao}
+                    >
+                      <Edit2 size={18} color="#fff" />
+                      <Text style={styles.editButtonText}>Editar</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={styles.closeDetailsButton}
                       onPress={() => setShowDetailsModal(false)}
                     >
@@ -515,6 +644,90 @@ const IndustriasScreen = ({ navigation }) => {
                   </View>
                 </>
               )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NOVO: Modal de Edição */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.cadastroModalContainer}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Editar Indústria</Text>
+
+              <Text style={styles.inputLabel}>CNPJ *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="00.000.000/0000-00"
+                value={industriaEmEdicao.cnpj}
+                onChangeText={(text) => setIndustriaEmEdicao({...industriaEmEdicao, cnpj: formatCNPJ(text)})}
+                keyboardType="numeric"
+                maxLength={18}
+              />
+
+              <Text style={styles.inputLabel}>Nome da Indústria *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Apple Inc., Samsung Electronics..."
+                value={industriaEmEdicao.nome}
+                onChangeText={(text) => setIndustriaEmEdicao({...industriaEmEdicao, nome: text})}
+              />
+
+              <Text style={styles.inputLabel}>Telefone Comercial</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 99999-9999"
+                value={industriaEmEdicao.telefoneComercial}
+                onChangeText={(text) => setIndustriaEmEdicao({...industriaEmEdicao, telefoneComercial: formatTelefone(text)})}
+                keyboardType="phone-pad"
+                maxLength={15}
+              />
+
+              <Text style={styles.inputLabel}>Telefone Assistência Técnica</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 88888-8888"
+                value={industriaEmEdicao.telefoneAssistencia}
+                onChangeText={(text) => setIndustriaEmEdicao({...industriaEmEdicao, telefoneAssistencia: formatTelefone(text)})}
+                keyboardType="phone-pad"
+                maxLength={15}
+              />
+
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="contato@industria.com"
+                value={industriaEmEdicao.email}
+                onChangeText={(text) => setIndustriaEmEdicao({...industriaEmEdicao, email: text})}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.requiredFieldsNote}>
+                * Campos obrigatórios
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setShowEditModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancelar</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={salvarEdicao}
+                >
+                  <Text style={styles.saveButtonText}>Salvar Edição</Text>
+                </TouchableOpacity>
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -627,7 +840,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tableCell: {
-    flex: 1,
+    flex: 1, // Padrão
     paddingHorizontal: 10,
     justifyContent: 'center',
   },
@@ -666,18 +879,23 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     width: '90%',
     maxHeight: '80%',
+    overflow: 'hidden', // Garante que o conteúdo fique dentro do border radius
   },
   cadastroModalContainer: {
     backgroundColor: '#fff',
     borderRadius: 15,
     width: '95%',
     maxHeight: '90%',
+    overflow: 'hidden',
+    paddingBottom: 10, // Para evitar que o botão fique grudado
   },
   detailsModalContainer: {
     backgroundColor: '#fff',
     borderRadius: 15,
     width: '90%',
     maxHeight: '85%',
+    paddingBottom: 10,
+    overflow: 'hidden',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -688,12 +906,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
     textAlign: 'center',
-    marginBottom: 20,
-    marginTop: 20,
+    marginBottom: 10,
+    marginTop: 10,
   },
   closeButton: {
     padding: 5,
@@ -701,6 +919,7 @@ const styles = StyleSheet.create({
   closeButtonText: {
     color: '#007AFF',
     fontSize: 16,
+    fontWeight: '600',
   },
   modalContent: {
     maxHeight: 400,
@@ -819,9 +1038,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 10,
     fontStyle: 'italic',
+    paddingHorizontal: 20,
   },
   modalButtons: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     gap: 10,
     marginTop: 20,
     marginHorizontal: 20,
@@ -859,6 +1080,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#fff',
     fontWeight: 'bold',
+  },
+  editButton: {
+    flex: 1,
+    backgroundColor: '#FFC107',
+    borderRadius: 8,
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editButtonText: {
+    textAlign: 'center',
+    color: '#333',
+    fontWeight: 'bold',
+    marginLeft: 5,
   },
   closeDetailsButton: {
     flex: 1,

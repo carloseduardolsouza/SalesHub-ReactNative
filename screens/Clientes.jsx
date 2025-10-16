@@ -11,8 +11,23 @@ import {
   Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Search, Filter, Plus, Check, Calendar } from 'lucide-react-native';
+import { Search, Filter, Plus, Check, Calendar, Edit, X } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Estado inicial do formulário (usado para novo cliente e reset)
+const INITIAL_CLIENTE_STATE = {
+  id: null, // Adicionado para rastrear a edição
+  cnpj: '',
+  nomeFantasia: '',
+  razaoSocial: '',
+  cidade: '',
+  inscricaoEstadual: '',
+  nomeComprador: '',
+  estado: '',
+  email: '',
+  telefone: '',
+  dataNascimento: new Date()
+};
 
 const ClientesScreen = ({ navigation }) => {
   // Estados
@@ -23,19 +38,9 @@ const ClientesScreen = ({ navigation }) => {
   const [selectedFields, setSelectedFields] = useState(['nomeFantasia', 'cidade', 'cnpj']);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Estado do formulário de cadastro
-  const [novoCliente, setNovoCliente] = useState({
-    cnpj: '',
-    nomeFantasia: '',
-    razaoSocial: '',
-    cidade: '',
-    inscricaoEstadual: '',
-    nomeComprador: '',
-    estado: '',
-    email: '',
-    telefone: '',
-    dataNascimento: new Date()
-  });
+  // Estado do formulário de cadastro/edição
+  const [novoCliente, setNovoCliente] = useState(INITIAL_CLIENTE_STATE);
+  const isEditing = novoCliente.id !== null; // Determina se está em modo de edição
 
   // Opções de campos disponíveis
   const availableFields = [
@@ -59,7 +64,12 @@ const ClientesScreen = ({ navigation }) => {
     try {
       const clientesData = await AsyncStorage.getItem('clientes');
       if (clientesData) {
-        setClientes(JSON.parse(clientesData));
+        // Garantir que dataNascimento seja um objeto Date para o DatePicker
+        const parsedClientes = JSON.parse(clientesData).map(cliente => ({
+          ...cliente,
+          dataNascimento: cliente.dataNascimento ? new Date(cliente.dataNascimento) : new Date(),
+        }));
+        setClientes(parsedClientes);
       }
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
@@ -69,7 +79,13 @@ const ClientesScreen = ({ navigation }) => {
 
   const saveClientes = async (clientesData) => {
     try {
-      await AsyncStorage.setItem('clientes', JSON.stringify(clientesData));
+      // Formata a lista para salvar no AsyncStorage (dataNascimento como string ISO)
+      const dataToSave = clientesData.map(cliente => ({
+        ...cliente,
+        // Garante que dataNascimento seja uma string ISO (sem a hora) para armazenamento
+        dataNascimento: cliente.dataNascimento.toISOString().split('T')[0],
+      }));
+      await AsyncStorage.setItem('clientes', JSON.stringify(dataToSave));
       setClientes(clientesData);
     } catch (error) {
       console.error('Erro ao salvar clientes:', error);
@@ -77,11 +93,41 @@ const ClientesScreen = ({ navigation }) => {
     }
   };
 
-  // Função para detectar se é CNPJ (apenas números e formatação)
+  // --- Funções de formatação e validação ---
   const isCNPJ = (text) => {
     const cleanText = text.replace(/\D/g, '');
     return cleanText.length >= 11 && /^\d+$/.test(cleanText);
   };
+
+  const formatCNPJ = (cnpj) => {
+    const cleaned = cnpj.replace(/\D/g, '');
+    if (cleaned.length <= 14) {
+      return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
+    return cnpj;
+  };
+
+  const formatTelefone = (telefone) => {
+    const cleaned = telefone.replace(/\D/g, '');
+    let formatted = cleaned;
+    if (cleaned.length > 2 && cleaned.length <= 7) {
+      formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}`;
+    } else if (cleaned.length > 7 && cleaned.length <= 11) {
+      formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
+    } else if (cleaned.length > 11) {
+      // Limita a 11 dígitos para o formato padrão (DDD + 9 dígitos)
+      formatted = cleaned.substring(0, 11);
+      formatted = `(${formatted.substring(0, 2)}) ${formatted.substring(2, 7)}-${formatted.substring(7, 11)}`;
+    }
+    return formatted;
+  };
+
+  const isValidEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+  // --- Fim das Funções de formatação e validação ---
+
 
   // Filtrar clientes baseado na busca
   const filteredClientes = useMemo(() => {
@@ -89,21 +135,21 @@ const ClientesScreen = ({ navigation }) => {
 
     return clientes.filter(cliente => {
       const searchLower = searchText.toLowerCase().trim();
-      
+
       if (isCNPJ(searchText)) {
         // Se parece com CNPJ, busca apenas no CNPJ
-        const cnpjNumbers = cliente.cnpj.replace(/\D/g, '');
+        const cnpjNumbers = (cliente.cnpj || '').replace(/\D/g, '');
         const searchNumbers = searchText.replace(/\D/g, '');
         return cnpjNumbers.includes(searchNumbers);
       } else {
         // Se não parece com CNPJ, busca no nome fantasia ou razão social
-        return cliente.nomeFantasia.toLowerCase().includes(searchLower) ||
-               cliente.razaoSocial.toLowerCase().includes(searchLower);
+        return (cliente.nomeFantasia || '').toLowerCase().includes(searchLower) ||
+          (cliente.razaoSocial || '').toLowerCase().includes(searchLower);
       }
     });
   }, [clientes, searchText]);
 
-  // Função para alternar seleção de campo
+  // Função para alternar seleção de campo (filtro de colunas)
   const toggleField = (fieldKey) => {
     if (selectedFields.includes(fieldKey)) {
       if (selectedFields.length > 1) {
@@ -116,39 +162,21 @@ const ClientesScreen = ({ navigation }) => {
     }
   };
 
-  // Função para formatar CNPJ
-  const formatCNPJ = (cnpj) => {
-    const cleaned = cnpj.replace(/\D/g, '');
-    if (cleaned.length <= 14) {
-      return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
-    }
-    return cnpj;
+  // Função para lidar com o fechamento dos modais
+  const fecharModalCadastro = () => {
+    setNovoCliente(INITIAL_CLIENTE_STATE); // Limpa o formulário e modo de edição
+    setShowCadastroModal(false);
   };
 
-  // Função para formatar telefone
-  const formatTelefone = (telefone) => {
-    const cleaned = telefone.replace(/\D/g, '');
-    if (cleaned.length <= 11) {
-      return cleaned.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
-    }
-    return telefone;
-  };
-
-  // Função para validar email
-  const isValidEmail = (email) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
-  // Função para salvar novo cliente
-  const salvarCliente = async () => {
+  // Função para salvar novo cliente ou editar cliente existente
+  const handleSalvarCliente = async () => {
     // Validações
     if (!novoCliente.cnpj || !novoCliente.nomeFantasia || !novoCliente.razaoSocial) {
       Alert.alert('Erro', 'CNPJ, Nome Fantasia e Razão Social são obrigatórios!');
       return;
     }
 
-    if (!isValidEmail(novoCliente.email)) {
+    if (novoCliente.email && !isValidEmail(novoCliente.email)) {
       Alert.alert('Erro', 'Email inválido!');
       return;
     }
@@ -159,9 +187,9 @@ const ClientesScreen = ({ navigation }) => {
       return;
     }
 
-    // Verificar se CNPJ já existe
-    const clienteExistente = clientes.find(cliente => 
-      cliente.cnpj.replace(/\D/g, '') === cnpjLimpo
+    // Verificar se CNPJ já existe (apenas se for um novo cadastro ou se o CNPJ mudou na edição)
+    const clienteExistente = clientes.find(cliente =>
+      (cliente.cnpj || '').replace(/\D/g, '') === cnpjLimpo && cliente.id !== novoCliente.id
     );
 
     if (clienteExistente) {
@@ -171,38 +199,75 @@ const ClientesScreen = ({ navigation }) => {
 
     try {
       const clienteFormatado = {
-        id: Date.now(),
         ...novoCliente,
+        // Garante que o ID exista para edição
+        id: novoCliente.id || Date.now(),
         cnpj: formatCNPJ(novoCliente.cnpj),
         telefone: formatTelefone(novoCliente.telefone),
-        dataNascimento: novoCliente.dataNascimento.toISOString().split('T')[0],
-        dataCadastro: new Date().toISOString()
+        // A dataNascimento já é um Date, mantemos ela assim na memória
+        dataNascimento: novoCliente.dataNascimento,
       };
 
-      const novosClientes = [clienteFormatado, ...clientes];
+      let novosClientes;
+
+      if (isEditing) {
+        // Modo Edição: Atualiza o cliente na lista
+        novosClientes = clientes.map(c =>
+          c.id === clienteFormatado.id ? clienteFormatado : c
+        );
+      } else {
+        // Modo Cadastro: Adiciona o cliente no início da lista
+        clienteFormatado.dataCadastro = new Date().toISOString(); // Adiciona data de cadastro
+        novosClientes = [clienteFormatado, ...clientes];
+      }
+
       await saveClientes(novosClientes);
-
-      // Limpar formulário
-      setNovoCliente({
-        cnpj: '',
-        nomeFantasia: '',
-        razaoSocial: '',
-        cidade: '',
-        inscricaoEstadual: '',
-        nomeComprador: '',
-        estado: '',
-        email: '',
-        telefone: '',
-        dataNascimento: new Date()
-      });
-
-      setShowCadastroModal(false);
-      Alert.alert('Sucesso', 'Cliente cadastrado com sucesso!');
+      fecharModalCadastro();
+      Alert.alert('Sucesso', `Cliente ${isEditing ? 'editado' : 'cadastrado'} com sucesso!`);
     } catch (error) {
       console.error('Erro ao salvar cliente:', error);
-      Alert.alert('Erro', 'Erro ao cadastrar cliente');
+      Alert.alert('Erro', `Erro ao ${isEditing ? 'editar' : 'cadastrar'} cliente`);
     }
   };
+
+  // Função para iniciar a edição
+  const iniciarEdicao = (cliente) => {
+    // Carrega os dados do cliente no estado do formulário
+    // É importante garantir que dataNascimento seja um objeto Date para o DateTimePicker
+    const dataNascimento = cliente.dataNascimento
+      ? new Date(cliente.dataNascimento)
+      : new Date();
+
+    setNovoCliente({
+      ...cliente,
+      dataNascimento: dataNascimento,
+    });
+    setShowCadastroModal(true);
+  };
+
+  // Função para deletar cliente (opcional, mas útil)
+  const deletarCliente = (id) => {
+    Alert.alert(
+      "Confirmar Exclusão",
+      "Tem certeza que deseja deletar este cliente?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Deletar",
+          onPress: async () => {
+            const novosClientes = clientes.filter(c => c.id !== id);
+            await saveClientes(novosClientes);
+            Alert.alert("Sucesso", "Cliente deletado com sucesso!");
+          },
+          style: "destructive"
+        }
+      ]
+    );
+  };
+
 
   // Componente para renderizar cada linha da tabela
   const renderClienteItem = ({ item }) => (
@@ -210,13 +275,27 @@ const ClientesScreen = ({ navigation }) => {
       {selectedFields.map(fieldKey => (
         <View key={fieldKey} style={styles.tableCell}>
           <Text style={styles.cellText} numberOfLines={2}>
-            {fieldKey === 'dataNascimento' && item[fieldKey] 
-              ? new Date(item[fieldKey]).toLocaleDateString('pt-BR')
+            {fieldKey === 'dataNascimento' && item[fieldKey] instanceof Date 
+              ? item[fieldKey].toLocaleDateString('pt-BR')
               : item[fieldKey] || '-'
             }
           </Text>
         </View>
       ))}
+      <View style={styles.actionCell}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => iniciarEdicao(item)}
+        >
+          <Edit size={18} color="#007AFF" />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => deletarCliente(item.id)}
+        >
+          <X size={18} color="#FF3B30" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -225,12 +304,18 @@ const ClientesScreen = ({ navigation }) => {
     <View style={styles.tableHeader}>
       {selectedFields.map(fieldKey => {
         const field = availableFields.find(f => f.key === fieldKey);
+        // Calcula a largura da célula baseada no número de colunas
+        const cellStyle = { flex: 1 };
         return (
-          <View key={fieldKey} style={styles.tableCell}>
+          <View key={fieldKey} style={[styles.tableCell, cellStyle]}>
             <Text style={styles.headerText}>{field?.label}</Text>
           </View>
         );
       })}
+      {/* Coluna de Ações */}
+      <View style={styles.actionHeader}>
+        <Text style={styles.headerText}>Ações</Text>
+      </View>
     </View>
   );
 
@@ -241,7 +326,10 @@ const ClientesScreen = ({ navigation }) => {
         <Text style={styles.title}>Clientes</Text>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => setShowCadastroModal(true)}
+          onPress={() => {
+            setNovoCliente(INITIAL_CLIENTE_STATE); // Limpa o estado para novo cadastro
+            setShowCadastroModal(true);
+          }}
         >
           <Plus size={20} color="#fff" />
           <Text style={styles.addButtonText}>Novo Cliente</Text>
@@ -260,7 +348,7 @@ const ClientesScreen = ({ navigation }) => {
             placeholderTextColor="#999"
           />
         </View>
-        
+
         <TouchableOpacity
           style={styles.filterButton}
           onPress={() => setShowFilterModal(true)}
@@ -275,7 +363,8 @@ const ClientesScreen = ({ navigation }) => {
         <FlatList
           data={filteredClientes}
           renderItem={renderClienteItem}
-          keyExtractor={(item) => item.id.toString()}
+          // Usar o ID do cliente, que é único
+          keyExtractor={(item) => item.id.toString()} 
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -295,7 +384,7 @@ const ClientesScreen = ({ navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Selecionar Colunas</Text>
+              <Text style={styles.modalTitleSmall}>Selecionar Colunas</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setShowFilterModal(false)}
@@ -333,17 +422,19 @@ const ClientesScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Modal de Cadastro */}
+      {/* Modal de Cadastro/Edição */}
       <Modal
         visible={showCadastroModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowCadastroModal(false)}
+        onRequestClose={fecharModalCadastro}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.cadastroModalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>Cadastrar Cliente</Text>
+              <Text style={styles.modalTitle}>
+                {isEditing ? 'Editar Cliente' : 'Cadastrar Cliente'}
+              </Text>
 
               <Text style={styles.inputLabel}>CNPJ *</Text>
               <TextInput
@@ -452,16 +543,16 @@ const ClientesScreen = ({ navigation }) => {
               <View style={styles.modalButtons}>
                 <TouchableOpacity
                   style={styles.cancelButton}
-                  onPress={() => setShowCadastroModal(false)}
+                  onPress={fecharModalCadastro}
                 >
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={styles.saveButton}
-                  onPress={salvarCliente}
+                  onPress={handleSalvarCliente}
                 >
-                  <Text style={styles.saveButtonText}>Salvar Cliente</Text>
+                  <Text style={styles.saveButtonText}>{isEditing ? 'Salvar Edição' : 'Salvar Cliente'}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -551,6 +642,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
+    overflow: 'hidden', // Para que a sombra funcione corretamente com o borderRadius
   },
   tableHeader: {
     flexDirection: 'row',
@@ -566,18 +658,34 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tableCell: {
-    flex: 1,
+    flex: 1, // Distribuído automaticamente, mas FlatList precisaria de flexGrow para melhor controle
     paddingHorizontal: 10,
     justifyContent: 'center',
+    // Adicione a largura mínima ou flex-basis se houver muitas colunas
   },
   headerText: {
     fontWeight: 'bold',
     color: '#333',
     fontSize: 14,
+    textAlign: 'center',
   },
   cellText: {
     color: '#666',
     fontSize: 13,
+  },
+  actionCell: {
+    width: 80, // Largura fixa para a coluna de ações
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  actionHeader: {
+    width: 80, // Largura fixa para o cabeçalho de ações
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  actionButton: {
+    padding: 5,
   },
   emptyContainer: {
     padding: 40,
@@ -598,12 +706,14 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     width: '90%',
     maxHeight: '80%',
+    overflow: 'hidden',
   },
   cadastroModalContainer: {
     backgroundColor: '#fff',
     borderRadius: 15,
     width: '95%',
     maxHeight: '95%',
+    paddingVertical: 10, // Para a rolagem interna
   },
   modalHeader: {
     flexDirection: 'row',
@@ -614,12 +724,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
     textAlign: 'center',
-    marginBottom: 20,
-    marginTop: 20,
+    marginBottom: 10,
+    marginTop: 10,
+    paddingHorizontal: 20,
+  },
+  modalTitleSmall: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
   },
   closeButton: {
     padding: 5,
@@ -629,6 +745,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   modalContent: {
+    // Usado no modal de filtro
     maxHeight: 400,
   },
   fieldOption: {
@@ -705,7 +822,7 @@ const styles = StyleSheet.create({
   modalButtons: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 20,
+    marginTop: 30,
     marginHorizontal: 20,
     marginBottom: 20,
   },
