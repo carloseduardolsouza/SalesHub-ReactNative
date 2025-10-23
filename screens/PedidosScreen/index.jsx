@@ -19,6 +19,14 @@ const PedidosScreen = () => {
   const [clientes, setClientes] = useState([]);
   const [produtos, setProdutos] = useState([]);
   const [industrias, setIndustrias] = useState([]);
+  const [empresaSettings, setEmpresaSettings] = useState({
+    empresaNome: '',
+    empresaCNPJ: '',
+    empresaEmail: '',
+    empresaTelefone: '',
+    empresaEndereco: '',
+    empresaLogoUri: null
+  });
 
   // Estados de filtros e busca
   const [filteredPedidos, setFilteredPedidos] = useState([]);
@@ -56,11 +64,26 @@ const PedidosScreen = () => {
       const clientesData = await AsyncStorage.getItem('clientes');
       const produtosData = await AsyncStorage.getItem('produtos');
       const industriasData = await AsyncStorage.getItem('industrias');
+      const settingsData = await AsyncStorage.getItem('settings');
 
       setPedidos(pedidosData ? JSON.parse(pedidosData) : []);
       setClientes(clientesData ? JSON.parse(clientesData) : []);
       setProdutos(produtosData ? JSON.parse(produtosData) : []);
       setIndustrias(industriasData ? JSON.parse(industriasData) : []);
+      
+      // Carregar configurações da empresa
+      if (settingsData) {
+        const settings = JSON.parse(settingsData);
+        setEmpresaSettings({
+          empresaNome: settings.empresaNome || '',
+          empresaCNPJ: settings.empresaCNPJ || '',
+          empresaEmail: settings.empresaEmail || '',
+          empresaTelefone: settings.empresaTelefone || '',
+          empresaEndereco: settings.empresaEndereco || '',
+          empresaLogoUri: settings.empresaLogoUri || null
+        });
+        console.log('Configurações da empresa carregadas:', settings);
+      }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     }
@@ -149,7 +172,10 @@ const PedidosScreen = () => {
 
   const exportOrderToPDF = async (pedido) => {
     try {
-      const htmlContent = generateOrderHTML(pedido, clientes);
+      console.log('Exportando PDF com configurações:', empresaSettings);
+      
+      // Gerar HTML com os dados da empresa
+      const htmlContent = generateOrderHTML(pedido, clientes, empresaSettings);
       const fileName = `NotaPedido_${pedido.id}_${new Date().getTime()}.pdf`;
 
       const { uri } = await Print.printToFileAsync({

@@ -5,7 +5,7 @@ const metodoPagamentoOptions = [
   { value: 'boleto', label: 'Boleto' }
 ];
 
-export const generateOrderHTML = (pedido, clientes) => {
+export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
   const cliente = clientes.find(c => c.nomeFantasia === pedido.cliente) || { 
     nomeFantasia: pedido.cliente, 
     razaoSocial: '', 
@@ -168,9 +168,9 @@ export const generateOrderHTML = (pedido, clientes) => {
     </head>
     <body>
         <div class="header">
-            <div class="company-name">SUA EMPRESA LTDA</div>
-            <div>CNPJ: 00.000.000/0001-00 | Telefone: (00) 0000-0000</div>
-            <div>Endereço: Sua Rua, 123 - Sua Cidade - UF - CEP 00000-000</div>
+            <div class="company-name">${empresaSettings.empresaNome || "SUA EMPRESA LTDA"}</div>
+            <div>CNPJ: ${empresaSettings.empresaCNPJ || "00.000.000/0001-00"} | Telefone: ${empresaSettings.empresaTelefone || "(00) 0000-0000"}</div>
+            <div>Endereço: ${empresaSettings.empresaEndereco || "Sua Rua, 123 - Sua Cidade - UF - CEP 00000-000"}</div>
         </div>
 
         <div class="document-title">NOTA DE PEDIDO Nº ${pedido.id}</div>
