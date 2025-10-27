@@ -33,15 +33,14 @@ const OrderDetailsModal = ({
           <ScrollView>
             <View style={styles.header}>
               <Text style={styles.modalTitle}>Pedido #{order.id}</Text>
+            </View>
               <TouchableOpacity
                 style={styles.exportButton}
-                // Chamada da prop onExportPDF, que deve conter a lógica de geração do PDF
                 onPress={() => onExportPDF(order, clientes)}
               >
                 <Download size={20} color="#fff" />
                 <Text style={styles.exportButtonText}>Exportar PDF</Text>
               </TouchableOpacity>
-            </View>
 
             <Text style={styles.detailLabel}>Cliente:</Text>
             <Text style={styles.detailValue}>{order.cliente}</Text>
@@ -50,18 +49,6 @@ const OrderDetailsModal = ({
             <Text style={styles.detailValue}>
               {new Date(order.data).toLocaleDateString("pt-BR")}
             </Text>
-
-            <Text style={styles.detailLabel}>Status:</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                { backgroundColor: getStatusColor(order.status) },
-              ]}
-            >
-              <Text style={styles.statusText}>
-                {getStatusText(order.status)}
-              </Text>
-            </View>
 
             <Text style={styles.detailLabel}>Método de Pagamento:</Text>
             <Text style={styles.detailValue}>
@@ -74,15 +61,10 @@ const OrderDetailsModal = ({
 
             {order.metodoPagamento === "boleto" && order.prazos?.length > 0 && (
               <>
-                <Text style={styles.detailLabel}>Prazos:</Text>
+                <Text style={styles.detailLabel}>Prazos de Pagamento:</Text>
                 {order.prazos.map((prazo, index) => (
                   <Text key={index} style={styles.detailValue}>
-                    {prazo.dias} dias - {prazo.porcentagem}% (R${" "}
-                    {(
-                      (order.total * parseFloat(prazo.porcentagem)) /
-                      100
-                    ).toFixed(2)}
-                    )
+                    {index + 1}ª Parcela: {prazo.dias} dias
                   </Text>
                 ))}
               </>

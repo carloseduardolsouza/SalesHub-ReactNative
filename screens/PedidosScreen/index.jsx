@@ -47,7 +47,6 @@ const PedidosScreen = () => {
     metodoPagamento: 'dinheiro',
     prazos: [],
     observacoes: '',
-    status: 'pendente',
   });
 
   useEffect(() => {
@@ -127,17 +126,6 @@ const PedidosScreen = () => {
       return;
     }
 
-    if (newOrder.metodoPagamento === 'boleto') {
-      const totalPorcentagem = newOrder.prazos.reduce((sum, prazo) => {
-        return sum + (parseFloat(prazo.porcentagem) || 0);
-      }, 0);
-
-      if (Math.abs(totalPorcentagem - 100) > 0.01) {
-        Alert.alert('Erro', 'A soma das porcentagens dos prazos deve ser 100%!');
-        return;
-      }
-    }
-
     const { total } = calculateOrderTotals(newOrder);
 
     const pedido = {
@@ -149,7 +137,7 @@ const PedidosScreen = () => {
       prazos: newOrder.prazos,
       total,
       observacoes: newOrder.observacoes,
-      status: newOrder.status,
+      status: 'pendente', // Status sempre será pendente ao criar
       data: new Date().toISOString(),
     };
 
@@ -163,7 +151,6 @@ const PedidosScreen = () => {
       metodoPagamento: 'dinheiro',
       prazos: [],
       observacoes: '',
-      status: 'pendente',
     });
 
     setShowNewOrderModal(false);

@@ -53,13 +53,13 @@ const NewOrderModal = ({
   const addPrazo = () => {
     setNewOrder({
       ...newOrder,
-      prazos: [...newOrder.prazos, { dias: '', porcentagem: '' }]
+      prazos: [...newOrder.prazos, { dias: '' }]
     });
   };
 
-  const updatePrazo = (index, field, value) => {
+  const updatePrazo = (index, value) => {
     const updatedPrazos = newOrder.prazos.map((prazo, i) =>
-      i === index ? { ...prazo, [field]: value } : prazo
+      i === index ? { dias: value } : prazo
     );
     setNewOrder({ ...newOrder, prazos: updatedPrazos });
   };
@@ -241,7 +241,7 @@ const NewOrderModal = ({
                       setNewOrder({
                         ...newOrder,
                         metodoPagamento: metodo.value,
-                        prazos: metodo.value === 'boleto' ? [{ dias: '30', porcentagem: '100' }] : []
+                        prazos: metodo.value === 'boleto' ? [{ dias: '30' }] : []
                       });
                     }}
                   >
@@ -259,9 +259,9 @@ const NewOrderModal = ({
               {newOrder.metodoPagamento === 'boleto' && (
                 <View style={styles.prazosSection}>
                   <View style={styles.prazosHeader}>
-                    <Text style={styles.prazosTitle}>Prazos de Pagamento</Text>
+                    <Text style={styles.prazosTitle}>Prazos de Pagamento (dias)</Text>
                     <TouchableOpacity style={styles.addPrazoButton} onPress={addPrazo}>
-                      <Plus size={16} color="#007AFF" />
+                      <Plus size={16} color="#fff" />
                       <Text style={styles.addPrazoText}>Adicionar</Text>
                     </TouchableOpacity>
                   </View>
@@ -272,18 +272,10 @@ const NewOrderModal = ({
                         style={styles.prazoInput}
                         placeholder="Dias"
                         value={prazo.dias}
-                        onChangeText={(value) => updatePrazo(index, 'dias', value)}
+                        onChangeText={(value) => updatePrazo(index, value)}
                         keyboardType="numeric"
                       />
                       <Text style={styles.prazoSeparator}>dias</Text>
-                      <TextInput
-                        style={styles.prazoInput}
-                        placeholder="0"
-                        value={prazo.porcentagem}
-                        onChangeText={(value) => updatePrazo(index, 'porcentagem', value)}
-                        keyboardType="numeric"
-                      />
-                      <Text style={styles.prazoSeparator}>%</Text>
                       <TouchableOpacity
                         style={styles.removePrazoButton}
                         onPress={() => removePrazo(index)}
@@ -295,7 +287,7 @@ const NewOrderModal = ({
 
                   {newOrder.prazos.length > 0 && (
                     <Text style={styles.prazosInfo}>
-                      Total: {newOrder.prazos.reduce((sum, prazo) => sum + (parseFloat(prazo.porcentagem) || 0), 0)}%
+                      Total de parcelas: {newOrder.prazos.length}
                     </Text>
                   )}
                 </View>
@@ -631,15 +623,16 @@ const styles = StyleSheet.create({
   addPrazoButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#4CAF50',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,
   },
   addPrazoText: {
-    color: '#007AFF',
+    color: '#fff',
     fontSize: 14,
     marginLeft: 4,
+    fontWeight: 'bold',
   },
   prazoItem: {
     flexDirection: 'row',
@@ -654,7 +647,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#ddd',
-    width: 60,
+    width: 80,
     textAlign: 'center',
   },
   prazoSeparator: {

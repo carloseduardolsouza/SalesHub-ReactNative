@@ -5,15 +5,42 @@ const metodoPagamentoOptions = [
   { value: 'boleto', label: 'Boleto' }
 ];
 
-export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
+export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
   const cliente = clientes.find(c => c.nomeFantasia === pedido.cliente) || { 
     nomeFantasia: pedido.cliente, 
     razaoSocial: '', 
     cnpj: '', 
-    endereco: '', 
     telefone: '', 
-    email: '' 
+    email: '',
+    endereco: {}
   };
+
+  // Formatar endereço completo do cliente
+  const formatarEndereco = (endereco) => {
+    if (!endereco || !endereco.logradouro) return 'N/A';
+    
+    const partes = [];
+    
+    if (endereco.logradouro) {
+      let enderecoLinha = endereco.logradouro;
+      if (endereco.numero) enderecoLinha += `, ${endereco.numero}`;
+      if (endereco.complemento) enderecoLinha += ` - ${endereco.complemento}`;
+      partes.push(enderecoLinha);
+    }
+    
+    if (endereco.bairro) partes.push(endereco.bairro);
+    
+    if (endereco.cidade || endereco.estado) {
+      const cidadeEstado = [endereco.cidade, endereco.estado].filter(Boolean).join(' - ');
+      partes.push(cidadeEstado);
+    }
+    
+    if (endereco.cep) partes.push(`CEP: ${endereco.cep}`);
+    
+    return partes.join(', ');
+  };
+
+  const enderecoFormatado = formatarEndereco(cliente.endereco);
 
   const subtotal = pedido.produtos.reduce((sum, produto) => 
     sum + (produto.preco * produto.quantidade), 0
@@ -170,6 +197,7 @@ export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
         <div class="header">
             <div class="company-name">${empresaSettings.empresaNome || "SUA EMPRESA LTDA"}</div>
             <div>CNPJ: ${empresaSettings.empresaCNPJ || "00.000.000/0001-00"} | Telefone: ${empresaSettings.empresaTelefone || "(00) 0000-0000"}</div>
+            <div>Email: ${empresaSettings.empresaEmail || "contato@empresa.com.br"}</div>
             <div>Endereço: ${empresaSettings.empresaEndereco || "Sua Rua, 123 - Sua Cidade - UF - CEP 00000-000"}</div>
         </div>
 
@@ -181,7 +209,7 @@ export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
                 <div class="info-line"><strong>Nome Fantasia:</strong> ${cliente.nomeFantasia}</div>
                 <div class="info-line"><strong>Razão Social:</strong> ${cliente.razaoSocial || 'N/A'}</div>
                 <div class="info-line"><strong>CNPJ:</strong> ${cliente.cnpj || 'N/A'}</div>
-                <div class="info-line"><strong>Endereço:</strong> ${cliente.endereco || 'N/A'}</div>
+                <div class="info-line"><strong>Endereço:</strong> ${enderecoFormatado}</div>
                 <div class="info-line"><strong>Telefone:</strong> ${cliente.telefone || 'N/A'}</div>
                 <div class="info-line"><strong>Email:</strong> ${cliente.email || 'N/A'}</div>
             </div>
@@ -190,7 +218,6 @@ export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
                 <div class="info-title">DADOS DO PEDIDO</div>
                 <div class="info-line"><strong>Data:</strong> ${new Date(pedido.data).toLocaleDateString('pt-BR')}</div>
                 <div class="info-line"><strong>Hora:</strong> ${new Date(pedido.data).toLocaleTimeString('pt-BR')}</div>
-                <div class="info-line"><strong>Status:</strong> <span class="status-badge status-${pedido.status}">${pedido.status}</span></div>
                 <div class="info-line"><strong>Método de Pagamento:</strong> ${metodoPagamento}</div>
             </div>
         </div>
@@ -242,8 +269,7 @@ export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
                 <strong>Parcelas:</strong>
                 ${pedido.prazos.map((prazo, index) => `
                     <div class="installment-item">
-                        <strong>${index + 1}ª Parcela:</strong> ${prazo.dias} dias - ${prazo.porcentagem}%
-                        (R$ ${((pedido.total * parseFloat(prazo.porcentagem)) / 100).toFixed(2).replace('.', ',')})
+                        <strong>${index + 1}ª Parcela:</strong> ${prazo.dias} dias
                     </div>
                 `).join('')}
             </div>
@@ -256,13 +282,6 @@ export const generateOrderHTML = (pedido, clientes , empresaSettings) => {
             <div>${pedido.observacoes}</div>
         </div>
         ` : ''}
-
-        <div class="footer">
-            <div>Este documento foi gerado automaticamente pelo sistema em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</div>
-            <div style="margin-top: 10px;">
-                <strong>Válido por 30 dias a partir da data de emissão</strong>
-            </div>
-        </div>
     </body>
     </html>
   `;

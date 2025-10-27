@@ -13,9 +13,6 @@ const PedidoCard = ({ pedido, onPress }) => (
   <TouchableOpacity style={styles.card} onPress={onPress}>
     <View style={styles.header}>
       <Text style={styles.id}>Pedido #{pedido.id}</Text>
-      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(pedido.status) }]}>
-        <Text style={styles.statusText}>{getStatusText(pedido.status)}</Text>
-      </View>
     </View>
     <Text style={styles.cliente}>{pedido.cliente}</Text>
     <Text style={styles.data}>

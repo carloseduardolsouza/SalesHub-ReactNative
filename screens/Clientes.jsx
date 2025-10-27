@@ -16,7 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 // Estado inicial do formulário (usado para novo cliente e reset)
 const INITIAL_CLIENTE_STATE = {
-  id: null, // Adicionado para rastrear a edição
+  id: null,
   cnpj: '',
   nomeFantasia: '',
   razaoSocial: '',
@@ -26,7 +26,17 @@ const INITIAL_CLIENTE_STATE = {
   estado: '',
   email: '',
   telefone: '',
-  dataNascimento: new Date()
+  dataNascimento: new Date(),
+  // Campos de endereço
+  endereco: {
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    estado: ''
+  }
 };
 
 const ClientesScreen = ({ navigation }) => {
@@ -40,7 +50,7 @@ const ClientesScreen = ({ navigation }) => {
 
   // Estado do formulário de cadastro/edição
   const [novoCliente, setNovoCliente] = useState(INITIAL_CLIENTE_STATE);
-  const isEditing = novoCliente.id !== null; // Determina se está em modo de edição
+  const isEditing = novoCliente.id !== null;
 
   // Opções de campos disponíveis
   const availableFields = [
@@ -52,7 +62,8 @@ const ClientesScreen = ({ navigation }) => {
     { key: 'nomeComprador', label: 'Nome do Comprador' },
     { key: 'estado', label: 'Estado' },
     { key: 'telefone', label: 'Telefone' },
-    { key: 'email', label: 'Email' }
+    { key: 'email', label: 'Email' },
+    { key: 'enderecoCompleto', label: 'Endereço' }
   ];
 
   // Carregar dados do AsyncStorage
@@ -64,10 +75,10 @@ const ClientesScreen = ({ navigation }) => {
     try {
       const clientesData = await AsyncStorage.getItem('clientes');
       if (clientesData) {
-        // Garantir que dataNascimento seja um objeto Date para o DatePicker
         const parsedClientes = JSON.parse(clientesData).map(cliente => ({
           ...cliente,
           dataNascimento: cliente.dataNascimento ? new Date(cliente.dataNascimento) : new Date(),
+          endereco: cliente.endereco || INITIAL_CLIENTE_STATE.endereco
         }));
         setClientes(parsedClientes);
       }
@@ -79,10 +90,8 @@ const ClientesScreen = ({ navigation }) => {
 
   const saveClientes = async (clientesData) => {
     try {
-      // Formata a lista para salvar no AsyncStorage (dataNascimento como string ISO)
       const dataToSave = clientesData.map(cliente => ({
         ...cliente,
-        // Garante que dataNascimento seja uma string ISO (sem a hora) para armazenamento
         dataNascimento: cliente.dataNascimento.toISOString().split('T')[0],
       }));
       await AsyncStorage.setItem('clientes', JSON.stringify(dataToSave));
@@ -107,6 +116,14 @@ const ClientesScreen = ({ navigation }) => {
     return cnpj;
   };
 
+  const formatCEP = (cep) => {
+    const cleaned = cep.replace(/\D/g, '');
+    if (cleaned.length <= 8) {
+      return cleaned.replace(/(\d{5})(\d{3})/, '$1-$2');
+    }
+    return cep;
+  };
+
   const formatTelefone = (telefone) => {
     const cleaned = telefone.replace(/\D/g, '');
     let formatted = cleaned;
@@ -115,7 +132,6 @@ const ClientesScreen = ({ navigation }) => {
     } else if (cleaned.length > 7 && cleaned.length <= 11) {
       formatted = `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7, 11)}`;
     } else if (cleaned.length > 11) {
-      // Limita a 11 dígitos para o formato padrão (DDD + 9 dígitos)
       formatted = cleaned.substring(0, 11);
       formatted = `(${formatted.substring(0, 2)}) ${formatted.substring(2, 7)}-${formatted.substring(7, 11)}`;
     }
@@ -126,8 +142,22 @@ const ClientesScreen = ({ navigation }) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
-  // --- Fim das Funções de formatação e validação ---
 
+  const getEnderecoCompleto = (cliente) => {
+    const end = cliente.endereco;
+    if (!end || !end.logradouro) return '-';
+    
+    const partes = [
+      end.logradouro,
+      end.numero,
+      end.bairro,
+      end.cidade,
+      end.estado
+    ].filter(Boolean);
+    
+    return partes.join(', ');
+  };
+  // --- Fim das Funções de formatação e validação ---
 
   // Filtrar clientes baseado na busca
   const filteredClientes = useMemo(() => {
@@ -137,12 +167,10 @@ const ClientesScreen = ({ navigation }) => {
       const searchLower = searchText.toLowerCase().trim();
 
       if (isCNPJ(searchText)) {
-        // Se parece com CNPJ, busca apenas no CNPJ
         const cnpjNumbers = (cliente.cnpj || '').replace(/\D/g, '');
         const searchNumbers = searchText.replace(/\D/g, '');
         return cnpjNumbers.includes(searchNumbers);
       } else {
-        // Se não parece com CNPJ, busca no nome fantasia ou razão social
         return (cliente.nomeFantasia || '').toLowerCase().includes(searchLower) ||
           (cliente.razaoSocial || '').toLowerCase().includes(searchLower);
       }
@@ -164,8 +192,19 @@ const ClientesScreen = ({ navigation }) => {
 
   // Função para lidar com o fechamento dos modais
   const fecharModalCadastro = () => {
-    setNovoCliente(INITIAL_CLIENTE_STATE); // Limpa o formulário e modo de edição
+    setNovoCliente(INITIAL_CLIENTE_STATE);
     setShowCadastroModal(false);
+  };
+
+  // Atualizar campo de endereço
+  const updateEndereco = (field, value) => {
+    setNovoCliente({
+      ...novoCliente,
+      endereco: {
+        ...novoCliente.endereco,
+        [field]: value
+      }
+    });
   };
 
   // Função para salvar novo cliente ou editar cliente existente
@@ -187,7 +226,6 @@ const ClientesScreen = ({ navigation }) => {
       return;
     }
 
-    // Verificar se CNPJ já existe (apenas se for um novo cadastro ou se o CNPJ mudou na edição)
     const clienteExistente = clientes.find(cliente =>
       (cliente.cnpj || '').replace(/\D/g, '') === cnpjLimpo && cliente.id !== novoCliente.id
     );
@@ -200,24 +238,24 @@ const ClientesScreen = ({ navigation }) => {
     try {
       const clienteFormatado = {
         ...novoCliente,
-        // Garante que o ID exista para edição
         id: novoCliente.id || Date.now(),
         cnpj: formatCNPJ(novoCliente.cnpj),
         telefone: formatTelefone(novoCliente.telefone),
-        // A dataNascimento já é um Date, mantemos ela assim na memória
         dataNascimento: novoCliente.dataNascimento,
+        endereco: {
+          ...novoCliente.endereco,
+          cep: formatCEP(novoCliente.endereco.cep)
+        }
       };
 
       let novosClientes;
 
       if (isEditing) {
-        // Modo Edição: Atualiza o cliente na lista
         novosClientes = clientes.map(c =>
           c.id === clienteFormatado.id ? clienteFormatado : c
         );
       } else {
-        // Modo Cadastro: Adiciona o cliente no início da lista
-        clienteFormatado.dataCadastro = new Date().toISOString(); // Adiciona data de cadastro
+        clienteFormatado.dataCadastro = new Date().toISOString();
         novosClientes = [clienteFormatado, ...clientes];
       }
 
@@ -232,8 +270,6 @@ const ClientesScreen = ({ navigation }) => {
 
   // Função para iniciar a edição
   const iniciarEdicao = (cliente) => {
-    // Carrega os dados do cliente no estado do formulário
-    // É importante garantir que dataNascimento seja um objeto Date para o DateTimePicker
     const dataNascimento = cliente.dataNascimento
       ? new Date(cliente.dataNascimento)
       : new Date();
@@ -241,11 +277,12 @@ const ClientesScreen = ({ navigation }) => {
     setNovoCliente({
       ...cliente,
       dataNascimento: dataNascimento,
+      endereco: cliente.endereco || INITIAL_CLIENTE_STATE.endereco
     });
     setShowCadastroModal(true);
   };
 
-  // Função para deletar cliente (opcional, mas útil)
+  // Função para deletar cliente
   const deletarCliente = (id) => {
     Alert.alert(
       "Confirmar Exclusão",
@@ -268,7 +305,6 @@ const ClientesScreen = ({ navigation }) => {
     );
   };
 
-
   // Componente para renderizar cada linha da tabela
   const renderClienteItem = ({ item }) => (
     <View style={styles.tableRow}>
@@ -277,6 +313,8 @@ const ClientesScreen = ({ navigation }) => {
           <Text style={styles.cellText} numberOfLines={2}>
             {fieldKey === 'dataNascimento' && item[fieldKey] instanceof Date 
               ? item[fieldKey].toLocaleDateString('pt-BR')
+              : fieldKey === 'enderecoCompleto'
+              ? getEnderecoCompleto(item)
               : item[fieldKey] || '-'
             }
           </Text>
@@ -304,7 +342,6 @@ const ClientesScreen = ({ navigation }) => {
     <View style={styles.tableHeader}>
       {selectedFields.map(fieldKey => {
         const field = availableFields.find(f => f.key === fieldKey);
-        // Calcula a largura da célula baseada no número de colunas
         const cellStyle = { flex: 1 };
         return (
           <View key={fieldKey} style={[styles.tableCell, cellStyle]}>
@@ -312,7 +349,6 @@ const ClientesScreen = ({ navigation }) => {
           </View>
         );
       })}
-      {/* Coluna de Ações */}
       <View style={styles.actionHeader}>
         <Text style={styles.headerText}>Ações</Text>
       </View>
@@ -327,7 +363,7 @@ const ClientesScreen = ({ navigation }) => {
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => {
-            setNovoCliente(INITIAL_CLIENTE_STATE); // Limpa o estado para novo cadastro
+            setNovoCliente(INITIAL_CLIENTE_STATE);
             setShowCadastroModal(true);
           }}
         >
@@ -363,7 +399,6 @@ const ClientesScreen = ({ navigation }) => {
         <FlatList
           data={filteredClientes}
           renderItem={renderClienteItem}
-          // Usar o ID do cliente, que é único
           keyExtractor={(item) => item.id.toString()} 
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
@@ -436,6 +471,9 @@ const ClientesScreen = ({ navigation }) => {
                 {isEditing ? 'Editar Cliente' : 'Cadastrar Cliente'}
               </Text>
 
+              {/* Seção de Dados Principais */}
+              <Text style={styles.sectionTitle}>Dados Principais</Text>
+
               <Text style={styles.inputLabel}>CNPJ *</Text>
               <TextInput
                 style={styles.input}
@@ -462,23 +500,6 @@ const ClientesScreen = ({ navigation }) => {
                 onChangeText={(text) => setNovoCliente({...novoCliente, razaoSocial: text})}
               />
 
-              <Text style={styles.inputLabel}>Cidade</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Cidade"
-                value={novoCliente.cidade}
-                onChangeText={(text) => setNovoCliente({...novoCliente, cidade: text})}
-              />
-
-              <Text style={styles.inputLabel}>Estado</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Estado (UF)"
-                value={novoCliente.estado}
-                onChangeText={(text) => setNovoCliente({...novoCliente, estado: text.toUpperCase()})}
-                maxLength={2}
-              />
-
               <Text style={styles.inputLabel}>Inscrição Estadual</Text>
               <TextInput
                 style={styles.input}
@@ -486,6 +507,84 @@ const ClientesScreen = ({ navigation }) => {
                 value={novoCliente.inscricaoEstadual}
                 onChangeText={(text) => setNovoCliente({...novoCliente, inscricaoEstadual: text})}
               />
+
+              {/* Seção de Endereço */}
+              <Text style={styles.sectionTitle}>Endereço</Text>
+
+              <Text style={styles.inputLabel}>CEP</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="00000-000"
+                value={novoCliente.endereco.cep}
+                onChangeText={(text) => updateEndereco('cep', formatCEP(text))}
+                keyboardType="numeric"
+                maxLength={9}
+              />
+
+              <Text style={styles.inputLabel}>Logradouro</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Rua, Avenida, etc."
+                value={novoCliente.endereco.logradouro}
+                onChangeText={(text) => updateEndereco('logradouro', text)}
+              />
+
+              <View style={styles.rowInputs}>
+                <View style={styles.smallInputContainer}>
+                  <Text style={styles.inputLabel}>Número</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="123"
+                    value={novoCliente.endereco.numero}
+                    onChangeText={(text) => updateEndereco('numero', text)}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={styles.largeInputContainer}>
+                  <Text style={styles.inputLabel}>Complemento</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Apto, Sala, etc."
+                    value={novoCliente.endereco.complemento}
+                    onChangeText={(text) => updateEndereco('complemento', text)}
+                  />
+                </View>
+              </View>
+
+              <Text style={styles.inputLabel}>Bairro</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Bairro"
+                value={novoCliente.endereco.bairro}
+                onChangeText={(text) => updateEndereco('bairro', text)}
+              />
+
+              <View style={styles.rowInputs}>
+                <View style={styles.largeInputContainer}>
+                  <Text style={styles.inputLabel}>Cidade</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Cidade"
+                    value={novoCliente.endereco.cidade}
+                    onChangeText={(text) => updateEndereco('cidade', text)}
+                  />
+                </View>
+
+                <View style={styles.smallInputContainer}>
+                  <Text style={styles.inputLabel}>UF</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="SP"
+                    value={novoCliente.endereco.estado}
+                    onChangeText={(text) => updateEndereco('estado', text.toUpperCase())}
+                    maxLength={2}
+                  />
+                </View>
+              </View>
+
+              {/* Seção de Contato */}
+              <Text style={styles.sectionTitle}>Contato</Text>
 
               <Text style={styles.inputLabel}>Nome do Comprador</Text>
               <TextInput
@@ -642,7 +741,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
-    overflow: 'hidden', // Para que a sombra funcione corretamente com o borderRadius
+    overflow: 'hidden',
   },
   tableHeader: {
     flexDirection: 'row',
@@ -658,10 +757,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tableCell: {
-    flex: 1, // Distribuído automaticamente, mas FlatList precisaria de flexGrow para melhor controle
+    flex: 1,
     paddingHorizontal: 10,
     justifyContent: 'center',
-    // Adicione a largura mínima ou flex-basis se houver muitas colunas
   },
   headerText: {
     fontWeight: 'bold',
@@ -674,13 +772,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   actionCell: {
-    width: 80, // Largura fixa para a coluna de ações
+    width: 80,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
   },
   actionHeader: {
-    width: 80, // Largura fixa para o cabeçalho de ações
+    width: 80,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -713,7 +811,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     width: '95%',
     maxHeight: '95%',
-    paddingVertical: 10, // Para a rolagem interna
+    paddingVertical: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -737,6 +835,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
   closeButton: {
     padding: 5,
   },
@@ -745,7 +854,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   modalContent: {
-    // Usado no modal de filtro
     maxHeight: 400,
   },
   fieldOption: {
@@ -802,6 +910,17 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     marginBottom: 10,
     marginHorizontal: 20,
+  },
+  rowInputs: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+  },
+  smallInputContainer: {
+    flex: 1,
+  },
+  largeInputContainer: {
+    flex: 2,
   },
   dateButton: {
     backgroundColor: '#f8f8f8',
