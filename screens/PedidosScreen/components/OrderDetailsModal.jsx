@@ -34,13 +34,13 @@ const OrderDetailsModal = ({
             <View style={styles.header}>
               <Text style={styles.modalTitle}>Pedido #{order.id}</Text>
             </View>
-              <TouchableOpacity
-                style={styles.exportButton}
-                onPress={() => onExportPDF(order, clientes)}
-              >
-                <Download size={20} color="#fff" />
-                <Text style={styles.exportButtonText}>Exportar PDF</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.exportButton}
+              onPress={() => onExportPDF(order, clientes)}
+            >
+              <Download size={20} color="#fff" />
+              <Text style={styles.exportButtonText}>Exportar PDF</Text>
+            </TouchableOpacity>
 
             <Text style={styles.detailLabel}>Cliente:</Text>
             <Text style={styles.detailValue}>{order.cliente}</Text>
@@ -74,6 +74,11 @@ const OrderDetailsModal = ({
             {order.produtos?.map((produto, index) => (
               <View key={index} style={styles.produtoDetail}>
                 <Text style={styles.produtoDetailName}>{produto.nome}</Text>
+                {produto.variacaoSelecionada && (
+                  <Text style={styles.produtoDetailVariation}>
+                    {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                  </Text>
+                )}
                 <Text style={styles.produtoDetailInfo}>
                   Qtd: {produto.quantidade} x R${" "}
                   {produto.preco?.toFixed(2) || "0.00"} = R${" "}
@@ -148,6 +153,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
+    marginBottom: 20,
   },
   exportButtonText: {
     color: "#fff",
@@ -187,6 +193,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
+  },
+  produtoDetailVariation: {
+    fontSize: 13,
+    color: "#FF9800",
+    fontStyle: "italic",
+    marginTop: 2,
+    marginBottom: 3,
   },
   produtoDetailInfo: {
     fontSize: 14,

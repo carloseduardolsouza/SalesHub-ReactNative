@@ -32,21 +32,21 @@ const NewOrderModal = ({
 
   const { subtotal, desconto, total } = calculateOrderTotals(newOrder);
 
-  const updateProductQuantity = (productId, newQuantity) => {
+  const updateProductQuantity = (productIndex, newQuantity) => {
     if (newQuantity <= 0) {
-      const updatedProducts = newOrder.produtos.filter(p => p.id !== productId);
+      const updatedProducts = newOrder.produtos.filter((_, index) => index !== productIndex);
       setNewOrder({ ...newOrder, produtos: updatedProducts });
       return;
     }
 
-    const updatedProducts = newOrder.produtos.map(p =>
-      p.id === productId ? { ...p, quantidade: newQuantity } : p
+    const updatedProducts = newOrder.produtos.map((p, index) =>
+      index === productIndex ? { ...p, quantidade: newQuantity } : p
     );
     setNewOrder({ ...newOrder, produtos: updatedProducts });
   };
 
-  const removeProductFromOrder = (productId) => {
-    const updatedProducts = newOrder.produtos.filter(p => p.id !== productId);
+  const removeProductFromOrder = (productIndex) => {
+    const updatedProducts = newOrder.produtos.filter((_, index) => index !== productIndex);
     setNewOrder({ ...newOrder, produtos: updatedProducts });
   };
 
@@ -126,24 +126,29 @@ const NewOrderModal = ({
                 </View>
               ) : (
                 <View style={styles.productsList}>
-                  {newOrder.produtos.map(produto => (
-                    <View key={produto.id} style={styles.selectedProduct}>
+                  {newOrder.produtos.map((produto, index) => (
+                    <View key={index} style={styles.selectedProduct}>
                       <View style={styles.productInfo}>
                         <Text style={styles.productName}>{produto.nome}</Text>
+                        {produto.variacaoSelecionada && (
+                          <Text style={styles.productVariation}>
+                            {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                          </Text>
+                        )}
                         <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
                       </View>
 
                       <View style={styles.quantityControls}>
                         <TouchableOpacity
                           style={styles.quantityButton}
-                          onPress={() => updateProductQuantity(produto.id, produto.quantidade - 1)}
+                          onPress={() => updateProductQuantity(index, produto.quantidade - 1)}
                         >
                           <Minus size={16} color="#666" />
                         </TouchableOpacity>
                         <Text style={styles.quantityText}>{produto.quantidade}</Text>
                         <TouchableOpacity
                           style={styles.quantityButton}
-                          onPress={() => updateProductQuantity(produto.id, produto.quantidade + 1)}
+                          onPress={() => updateProductQuantity(index, produto.quantidade + 1)}
                         >
                           <Plus size={16} color="#666" />
                         </TouchableOpacity>
@@ -155,7 +160,7 @@ const NewOrderModal = ({
                         </Text>
                         <TouchableOpacity
                           style={styles.removeProductButton}
-                          onPress={() => removeProductFromOrder(produto.id)}
+                          onPress={() => removeProductFromOrder(index)}
                         >
                           <X size={16} color="#f44336" />
                         </TouchableOpacity>
@@ -457,6 +462,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+  },
+  productVariation: {
+    fontSize: 13,
+    color: '#FF9800',
+    fontWeight: '500',
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   productPrice: {
     fontSize: 14,

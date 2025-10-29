@@ -128,6 +128,12 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
             .products-table tr:nth-child(even) {
                 background-color: #f9f9f9;
             }
+            .product-variation {
+                color: #FF9800;
+                font-style: italic;
+                font-size: 13px;
+                margin-top: 3px;
+            }
             .totals-section {
                 margin-top: 30px;
                 border-top: 2px solid #ddd;
@@ -178,19 +184,6 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 border-top: 1px solid #ddd;
                 padding-top: 20px;
             }
-            .status-badge {
-                display: inline-block;
-                padding: 6px 12px;
-                border-radius: 12px;
-                color: white;
-                font-size: 12px;
-                font-weight: bold;
-                text-transform: uppercase;
-            }
-            .status-pendente { background-color: #FF9800; }
-            .status-processando { background-color: #2196F3; }
-            .status-concluido { background-color: #4CAF50; }
-            .status-cancelado { background-color: #F44336; }
         </style>
     </head>
     <body>
@@ -225,16 +218,23 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
         <table class="products-table">
             <thead>
                 <tr>
-                    <th style="width: 50%;">Produto</th>
+                    <th style="width: 45%;">Produto</th>
                     <th style="width: 15%;">Quantidade</th>
-                    <th style="width: 17.5%;">Valor Unitário</th>
-                    <th style="width: 17.5%;">Valor Total</th>
+                    <th style="width: 20%;">Valor Unitário</th>
+                    <th style="width: 20%;">Valor Total</th>
                 </tr>
             </thead>
             <tbody>
                 ${pedido.produtos.map(produto => `
                     <tr>
-                        <td>${produto.nome}</td>
+                        <td>
+                            ${produto.nome}
+                            ${produto.variacaoSelecionada ? `
+                                <div class="product-variation">
+                                    ${produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: ${produto.variacaoSelecionada.valor}
+                                </div>
+                            ` : ''}
+                        </td>
                         <td style="text-align: center;">${produto.quantidade}</td>
                         <td style="text-align: right;">R$ ${produto.preco.toFixed(2).replace('.', ',')}</td>
                         <td style="text-align: right;">R$ ${(produto.preco * produto.quantidade).toFixed(2).replace('.', ',')}</td>
@@ -282,6 +282,11 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
             <div>${pedido.observacoes}</div>
         </div>
         ` : ''}
+
+        <div class="footer">
+            <p>Este documento é uma nota de pedido e não possui valor fiscal.</p>
+            <p>Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+        </div>
     </body>
     </html>
   `;
