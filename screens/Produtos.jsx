@@ -10,13 +10,11 @@ import {
   Alert,
   Modal,
   ScrollView,
-  // PermissionsAndroid e Platform não são mais necessários para permissões de imagem no Expo
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Substituído por expo-image-picker:
-import * as ImagePicker from 'expo-image-picker'; 
+import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
-import { Camera, Image as ImageIcon, Search, Plus, X } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Search, Plus, X, Edit } from 'lucide-react-native';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
@@ -27,7 +25,7 @@ const ProdutosScreen = () => {
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
   const [industrias, setIndustrias] = useState([]);
-  const [showVariacaoModal, setShowVariacaoModal] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const [novoProduto, setNovoProduto] = useState({
     nome: '',
@@ -39,17 +37,15 @@ const ProdutosScreen = () => {
   });
 
   const [novaVariacao, setNovaVariacao] = useState({
-    tipo: 'cor', // 'cor' ou 'tamanho'
+    tipo: 'cor',
     valor: ''
   });
 
-  // Carregar dados do AsyncStorage
   useEffect(() => {
     loadProdutos();
     loadIndustrias();
   }, []);
 
-  // Filtrar produtos quando houver mudanças
   useEffect(() => {
     filterProducts();
   }, [searchText, produtos]);
@@ -105,15 +101,9 @@ const ProdutosScreen = () => {
     setFilteredProducts(filtered);
   };
 
-  // ----------------------------------------------------------------
-  // FUNÇÕES DE IMAGEM CORRIGIDAS COM EXPO-IMAGE-PICKER
-  // ----------------------------------------------------------------
-
-  // Abrir câmera
   const openCamera = async () => {
     setShowImagePickerModal(false);
 
-    // Solicitar permissão da câmera
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
       Alert.alert(
@@ -128,12 +118,11 @@ const ProdutosScreen = () => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.8,
-        base64: true, // Importante para salvar o Base64
+        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        // Adicionar o prefixo do Base64 para ser usado como URI de imagem
         const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
         setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
       }
@@ -143,11 +132,9 @@ const ProdutosScreen = () => {
     }
   };
 
-  // Abrir galeria
   const openGallery = async () => {
     setShowImagePickerModal(false);
 
-    // Solicitar permissão da galeria
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
       Alert.alert(
@@ -162,12 +149,11 @@ const ProdutosScreen = () => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.8,
-        base64: true, // Importante para salvar o Base64
+        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        // Adicionar o prefixo do Base64 para ser usado como URI de imagem
         const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
         setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
       }
@@ -177,8 +163,6 @@ const ProdutosScreen = () => {
     }
   };
 
-
-  // Remover imagem selecionada
   const removeImage = () => {
     Alert.alert(
       'Remover Imagem',
@@ -194,18 +178,12 @@ const ProdutosScreen = () => {
     );
   };
 
-  // ----------------------------------------------------------------
-  // FIM DAS CORREÇÕES DE IMAGEM
-  // ----------------------------------------------------------------
-
-  // Formatar valor monetário (entrada como string '1234' => '12,34')
   const formatMoney = (value) => {
     if (!value) return '';
 
     const numericValue = String(value).replace(/[^\d]/g, '');
     if (numericValue.length === 0) return '';
 
-    // Evita crash se o valor for muito grande
     if (numericValue.length > 15) return formatMoney(numericValue.slice(0, 15));
 
     const numberValue = parseFloat(numericValue) / 100;
@@ -227,7 +205,6 @@ const ProdutosScreen = () => {
     return isNaN(parsed) ? 0 : parsed;
   };
 
-  // Adicionar variação
   const adicionarVariacao = () => {
     if (!novaVariacao.valor.trim()) {
       Alert.alert('Erro', 'Digite um valor para a variação!');
@@ -251,7 +228,6 @@ const ProdutosScreen = () => {
     setNovaVariacao({ tipo: 'cor', valor: '' });
   };
 
-  // Remover variação
   const removerVariacao = (index) => {
     setNovoProduto(prev => {
       const novas = prev.variacoes.filter((_, i) => i !== index);
@@ -259,8 +235,22 @@ const ProdutosScreen = () => {
     });
   };
 
+  const openEditMode = (produto) => {
+    setIsEditMode(true);
+    setNovoProduto({
+      id: produto.id,
+      nome: produto.nome,
+      preco: produto.preco.toFixed(2).replace('.', ','),
+      imagem: produto.imagem,
+      industria: produto.industria,
+      descricao: produto.descricao || '',
+      variacoes: produto.variacoes || []
+    });
+    setShowProductModal(false);
+    setShowAddProductModal(true);
+  };
+
   const salvarProduto = async () => {
-    // Validações
     if (!novoProduto.nome.trim() || !novoProduto.preco || !novoProduto.industria) {
       Alert.alert('Erro', 'Nome, Preço e Indústria são obrigatórios!');
       return;
@@ -274,19 +264,41 @@ const ProdutosScreen = () => {
     }
 
     try {
-      const produto = {
-        id: Date.now(),
-        nome: novoProduto.nome.trim(),
-        preco: preco,
-        imagem: novoProduto.imagem,
-        industria: novoProduto.industria,
-        descricao: novoProduto.descricao.trim(),
-        variacoes: novoProduto.variacoes,
-        dataCadastro: new Date().toISOString()
-      };
+      if (isEditMode) {
+        // Atualizar produto existente
+        const produtosAtualizados = produtos.map(p =>
+          p.id === novoProduto.id
+            ? {
+                ...p,
+                nome: novoProduto.nome.trim(),
+                preco: preco,
+                imagem: novoProduto.imagem,
+                industria: novoProduto.industria,
+                descricao: novoProduto.descricao.trim(),
+                variacoes: novoProduto.variacoes,
+                dataAtualizacao: new Date().toISOString()
+              }
+            : p
+        );
+        await saveProdutos(produtosAtualizados);
+        Alert.alert('Sucesso', 'Produto atualizado com sucesso!');
+      } else {
+        // Criar novo produto
+        const produto = {
+          id: Date.now(),
+          nome: novoProduto.nome.trim(),
+          preco: preco,
+          imagem: novoProduto.imagem,
+          industria: novoProduto.industria,
+          descricao: novoProduto.descricao.trim(),
+          variacoes: novoProduto.variacoes,
+          dataCadastro: new Date().toISOString()
+        };
 
-      const novosProdutos = [produto, ...produtos];
-      await saveProdutos(novosProdutos);
+        const novosProdutos = [produto, ...produtos];
+        await saveProdutos(novosProdutos);
+        Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
+      }
 
       // Limpar formulário
       setNovoProduto({
@@ -297,12 +309,11 @@ const ProdutosScreen = () => {
         descricao: '',
         variacoes: []
       });
-
+      setIsEditMode(false);
       setShowAddProductModal(false);
-      Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
-      Alert.alert('Erro', 'Erro ao cadastrar produto');
+      Alert.alert('Erro', 'Erro ao salvar produto');
     }
   };
 
@@ -361,12 +372,10 @@ const ProdutosScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Produtos</Text>
       </View>
 
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Search size={20} color="#666" style={styles.searchIcon} />
         <TextInput
@@ -378,16 +387,17 @@ const ProdutosScreen = () => {
         />
       </View>
 
-      {/* Add Button */}
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => setShowAddProductModal(true)}
+        onPress={() => {
+          setIsEditMode(false);
+          setShowAddProductModal(true);
+        }}
       >
         <Plus size={20} color="#fff" />
         <Text style={styles.addButtonText}>Cadastrar Produto</Text>
       </TouchableOpacity>
 
-      {/* Products List */}
       <FlatList
         data={filteredProducts}
         renderItem={renderProductCard}
@@ -451,18 +461,26 @@ const ProdutosScreen = () => {
 
                   <View style={styles.modalButtonsRow}>
                     <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => openEditMode(selectedProduct)}
+                    >
+                      <Edit size={16} color="#fff" />
+                      <Text style={styles.editButtonText}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={styles.deleteButton}
                       onPress={() => deleteProduto(selectedProduct.id)}
                     >
                       <Text style={styles.deleteButtonText}>Excluir</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.closeButton}
-                      onPress={() => setShowProductModal(false)}
-                    >
-                      <Text style={styles.closeButtonText}>Fechar</Text>
-                    </TouchableOpacity>
                   </View>
+                  
+                  <TouchableOpacity
+                    style={styles.closeButtonFull}
+                    onPress={() => setShowProductModal(false)}
+                  >
+                    <Text style={styles.closeButtonText}>Fechar</Text>
+                  </TouchableOpacity>
                 </>
               )}
             </ScrollView>
@@ -470,14 +488,15 @@ const ProdutosScreen = () => {
         </View>
       </Modal>
 
-      {/* Add Product Modal */}
+      {/* Add/Edit Product Modal */}
       <Modal visible={showAddProductModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.addProductModalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>Cadastrar Novo Produto</Text>
+              <Text style={styles.modalTitle}>
+                {isEditMode ? 'Editar Produto' : 'Cadastrar Novo Produto'}
+              </Text>
 
-              {/* Image Section */}
               <Text style={styles.inputLabel}>Imagem do Produto</Text>
               <TouchableOpacity
                 style={styles.imageSelector}
@@ -548,7 +567,6 @@ const ProdutosScreen = () => {
                 textAlignVertical="top"
               />
 
-              {/* Variações Section */}
               <Text style={styles.inputLabel}>Variações (Cores/Tamanhos)</Text>
 
               <View style={styles.variationInputContainer}>
@@ -576,7 +594,6 @@ const ProdutosScreen = () => {
                 </TouchableOpacity>
               </View>
 
-              {/* Lista de variações adicionadas */}
               {novoProduto.variacoes.length > 0 && (
                 <View style={styles.addedVariationsContainer}>
                   <Text style={styles.addedVariationsTitle}>Variações Adicionadas:</Text>
@@ -601,7 +618,7 @@ const ProdutosScreen = () => {
                   style={styles.cancelButton}
                   onPress={() => {
                     setShowAddProductModal(false);
-                    // Resetar formulário
+                    setIsEditMode(false);
                     setNovoProduto({
                       nome: '',
                       preco: '',
@@ -619,7 +636,9 @@ const ProdutosScreen = () => {
                   style={styles.saveButton}
                   onPress={salvarProduto}
                 >
-                  <Text style={styles.saveButtonText}>Salvar</Text>
+                  <Text style={styles.saveButtonText}>
+                    {isEditMode ? 'Atualizar' : 'Salvar'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -1101,12 +1120,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    padding: 15,
+    marginRight: 8,
+    elevation: 3,
+  },
+  editButtonText: {
+    textAlign: 'center',
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 5,
+  },
   deleteButton: {
     flex: 1,
     backgroundColor: '#f44336',
     borderRadius: 8,
     padding: 15,
-    marginRight: 8,
+    marginLeft: 8,
     elevation: 3,
   },
   deleteButtonText: {
@@ -1115,12 +1152,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  closeButton: {
-    flex: 1,
-    backgroundColor: '#007AFF',
+  closeButtonFull: {
+    backgroundColor: '#666',
     borderRadius: 8,
     padding: 15,
-    marginLeft: 8,
+    marginTop: 10,
     elevation: 3,
   },
   closeButtonText: {
