@@ -9,11 +9,10 @@ import {
   Switch,
   Modal,
   TextInput,
-  Image, // Adicionado para exibir a logo
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Importação de placeholder, substituir pela sua lib de imagem real
-// import * as ImagePicker from 'expo-image-picker'; 
+import * as ImagePicker from 'expo-image-picker';
 
 const ConfiguracaoScreen = () => {
   const [settings, setSettings] = useState({
@@ -21,13 +20,12 @@ const ConfiguracaoScreen = () => {
     notificacoesClientes: true,
     temaEscuro: false,
     moedaPadrao: 'BRL',
-    // Novos campos adicionados/atualizados
     empresaNome: '',
     empresaCNPJ: '', 
     empresaEmail: '',
     empresaTelefone: '',
     empresaEndereco: '',
-    empresaLogoUri: null, // URI para armazenar o caminho da logo
+    empresaLogoUri: null,
   });
 
   const [showCompanyModal, setShowCompanyModal] = useState(false);
@@ -36,13 +34,24 @@ const ConfiguracaoScreen = () => {
 
   useEffect(() => {
     loadSettings();
+    requestPermissions();
   }, []);
+
+  const requestPermissions = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permissão Necessária',
+        'Precisamos de permissão para acessar suas fotos para você poder selecionar a logo da empresa.'
+      );
+    }
+  };
 
   const loadSettings = async () => {
     try {
       const savedSettings = await AsyncStorage.getItem('settings');
       if (savedSettings) {
-        // Combina as configurações salvas com as configurações padrão
         setSettings((prevSettings) => ({ ...prevSettings, ...JSON.parse(savedSettings) }));
       }
     } catch (error) {
@@ -65,45 +74,60 @@ const ConfiguracaoScreen = () => {
     saveSettings(newSettings);
   };
 
-  // --- Funções de Manipulação de Imagem (Placeholder) ---
   const handleImagePicker = async () => {
-    // 
-    // !!! IMPLEMENTAÇÃO REAL NECESSITA DE UMA BIBLIOTECA EXTERNA !!!
-    // Exemplo com 'react-native-image-picker' ou 'expo-image-picker'
-    // 
-    Alert.alert(
-      'Selecione a Logo',
-      'Em um aplicativo real, você usaria uma biblioteca de seleção de imagens (ex: Expo Image Picker) para escolher uma foto.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Simular Seleção', 
-          onPress: () => {
-            // Simulação de que uma URI foi selecionada
-            const fakeUri = 'https://via.placeholder.com/150/2196F3/FFFFFF?Text=Logo'; 
-            setTempCompanyData(prev => ({ ...prev, logoUri: fakeUri }));
-          }
-        },
-      ]
-    );
+    try {
+      const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        const { status: newStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        
+        if (newStatus !== 'granted') {
+          Alert.alert(
+            'Permissão Negada',
+            'Não foi possível acessar a galeria. Por favor, habilite as permissões nas configurações do dispositivo.'
+          );
+          return;
+        }
+      }
 
-    // Exemplo de código (Com Expo Image Picker):
-    /*
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 1], // Ajuste o aspect ratio ideal para sua logo
-      quality: 0.5,
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'], // Corrigido: usar array de strings
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true, // Adicionar base64 diretamente
+      });
 
-    if (!result.cancelled) {
-      setTempCompanyData(prev => ({ ...prev, logoUri: result.uri }));
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const selectedImage = result.assets[0];
+        
+        // Criar data URI com o Base64 retornado pelo ImagePicker
+        if (selectedImage.base64) {
+          const imageDataUri = `data:image/jpeg;base64,${selectedImage.base64}`;
+          
+          setTempCompanyData(prev => ({ 
+            ...prev, 
+            logoUri: imageDataUri 
+          }));
+          
+          Alert.alert('Sucesso', 'Logo selecionada com sucesso!');
+        } else {
+          // Fallback: usar URI local
+          setTempCompanyData(prev => ({ 
+            ...prev, 
+            logoUri: selectedImage.uri 
+          }));
+          
+          Alert.alert('Sucesso', 'Logo selecionada com sucesso!');
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao selecionar imagem:', error);
+      Alert.alert('Erro', 'Não foi possível abrir a galeria. Tente novamente.');
     }
-    */
   };
 
   const exportData = async () => {
-    // ... (função exportData original, sem alterações)
     try {
       const clientes = await AsyncStorage.getItem('clientes');
       const produtos = await AsyncStorage.getItem('produtos');
@@ -116,7 +140,6 @@ const ConfiguracaoScreen = () => {
         dataExportacao: new Date().toISOString(),
       };
 
-      // Em um app real, você implementaria a exportação para arquivo (ex: CSV, JSON, SHARE API)
       Alert.alert(
         'Dados Exportados',
         `Dados exportados com sucesso!\n\nClientes: ${data.clientes.length}\nProdutos: ${data.produtos.length}\nPedidos: ${data.pedidos.length}`,
@@ -129,7 +152,6 @@ const ConfiguracaoScreen = () => {
   };
 
   const clearAllData = () => {
-    // ... (função clearAllData original, sem alterações)
     Alert.alert(
       'Limpar Todos os Dados',
       'Esta ação irá apagar todos os dados do aplicativo. Esta ação não pode ser desfeita. Deseja continuar?',
@@ -140,10 +162,18 @@ const ConfiguracaoScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.multiRemove(['clientes', 'produtos', 'pedidos', 'settings']); // Limpar settings tbm
-              setSettings({ // Resetar o estado local
-                notificacoesPedidos: true, notificacoesClientes: true, temaEscuro: false, moedaPadrao: 'BRL',
-                empresaNome: '', empresaCNPJ: '', empresaEmail: '', empresaTelefone: '', empresaEndereco: '', empresaLogoUri: null,
+              await AsyncStorage.multiRemove(['clientes', 'produtos', 'pedidos', 'settings']);
+              setSettings({
+                notificacoesPedidos: true, 
+                notificacoesClientes: true, 
+                temaEscuro: false, 
+                moedaPadrao: 'BRL',
+                empresaNome: '', 
+                empresaCNPJ: '', 
+                empresaEmail: '', 
+                empresaTelefone: '', 
+                empresaEndereco: '', 
+                empresaLogoUri: null,
               });
               Alert.alert('Sucesso', 'Todos os dados foram limpos');
             } catch (error) {
@@ -158,7 +188,6 @@ const ConfiguracaoScreen = () => {
   const saveCompanyData = () => {
     const newSettings = {
       ...settings,
-      // Usar temp data, ou o valor antigo se não foi alterado
       empresaNome: tempCompanyData.nome !== undefined ? tempCompanyData.nome : settings.empresaNome,
       empresaCNPJ: tempCompanyData.cnpj !== undefined ? tempCompanyData.cnpj : settings.empresaCNPJ,
       empresaEmail: tempCompanyData.email !== undefined ? tempCompanyData.email : settings.empresaEmail,
@@ -170,6 +199,23 @@ const ConfiguracaoScreen = () => {
     setShowCompanyModal(false);
     setTempCompanyData({});
     Alert.alert('Sucesso', 'Dados da empresa salvos com sucesso!');
+  };
+
+  const removeLogo = () => {
+    Alert.alert(
+      'Remover Logo',
+      'Deseja remover a logo da empresa?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Remover',
+          style: 'destructive',
+          onPress: () => {
+            setTempCompanyData(prev => ({ ...prev, logoUri: null }));
+          }
+        }
+      ]
+    );
   };
 
   const SettingItem = ({ title, subtitle, rightComponent, onPress }) => (
@@ -184,12 +230,10 @@ const ConfiguracaoScreen = () => {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Configurações</Text>
       </View>
 
-      {/* Notificações Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notificações</Text>
         
@@ -220,7 +264,6 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
-      {/* Aparência Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Aparência</Text>
         
@@ -238,7 +281,6 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
-      {/* Empresa Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Dados da Empresa</Text>
         
@@ -252,7 +294,7 @@ const ConfiguracaoScreen = () => {
               email: settings.empresaEmail,
               telefone: settings.empresaTelefone,
               endereco: settings.empresaEndereco,
-              logoUri: settings.empresaLogoUri, // Carrega URI atual
+              logoUri: settings.empresaLogoUri,
             });
             setShowCompanyModal(true);
           }}
@@ -260,7 +302,6 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
-      {/* Dados Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Gerenciamento de Dados</Text>
         
@@ -279,7 +320,6 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
-      {/* Sobre Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Sobre</Text>
         
@@ -294,20 +334,34 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
-      {/* Company Data Modal */}
       <Modal visible={showCompanyModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Dados da Empresa</Text>
               
-              {/* Logo Upload Section */}
               <Text style={styles.inputLabel}>Logo da Empresa</Text>
               <TouchableOpacity style={styles.logoPicker} onPress={handleImagePicker}>
                 {tempCompanyData.logoUri ? (
-                  <Image source={{ uri: tempCompanyData.logoUri }} style={styles.logoPreview} resizeMode="contain" />
+                  <View style={styles.logoPreviewContainer}>
+                    <Image 
+                      source={{ uri: tempCompanyData.logoUri }} 
+                      style={styles.logoPreview} 
+                      resizeMode="contain" 
+                    />
+                    <TouchableOpacity 
+                      style={styles.removeLogoButton}
+                      onPress={removeLogo}
+                    >
+                      <Text style={styles.removeLogoText}>✕ Remover</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : (
-                  <Text style={styles.logoPlaceholder}>Clique para selecionar a Logo</Text>
+                  <View style={styles.logoPlaceholderContainer}>
+                    <Text style={styles.logoPlaceholderIcon}>📷</Text>
+                    <Text style={styles.logoPlaceholder}>Clique para selecionar a Logo</Text>
+                    <Text style={styles.logoPlaceholderHint}>Formatos: JPG, PNG</Text>
+                  </View>
                 )}
               </TouchableOpacity>
               
@@ -380,7 +434,6 @@ const ConfiguracaoScreen = () => {
         </View>
       </Modal>
 
-      {/* Export Data Modal */}
       <Modal visible={showExportModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.exportModalContainer}>
@@ -571,24 +624,56 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  // NOVOS ESTILOS PARA LOGO
   logoPicker: {
     backgroundColor: '#f8f8f8',
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#ddd',
-    height: 100,
+    borderStyle: 'dashed',
+    minHeight: 120,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
+    overflow: 'hidden',
+  },
+  logoPlaceholderContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  logoPlaceholderIcon: {
+    fontSize: 40,
+    marginBottom: 10,
   },
   logoPlaceholder: {
-    color: '#999',
+    color: '#666',
     fontSize: 16,
+    fontWeight: '500',
+  },
+  logoPlaceholderHint: {
+    color: '#999',
+    fontSize: 12,
+    marginTop: 5,
+  },
+  logoPreviewContainer: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 10,
   },
   logoPreview: {
-    width: '100%',
-    height: '100%',
+    width: '90%',
+    height: 100,
+  },
+  removeLogoButton: {
+    marginTop: 10,
+    backgroundColor: '#F44336',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  removeLogoText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 

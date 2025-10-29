@@ -73,10 +73,21 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 color: #333;
             }
             .header {
-                text-align: center;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
                 border-bottom: 2px solid #2196F3;
                 padding-bottom: 20px;
                 margin-bottom: 30px;
+            }
+            .header-left {
+                flex: 1;
+            }
+            .company-logo {
+                width: 100px;
+                height: 100px;
+                object-fit: contain;
+                margin-left: 20px;
             }
             .company-name {
                 font-size: 24px;
@@ -84,10 +95,16 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 color: #2196F3;
                 margin-bottom: 10px;
             }
+            .company-info {
+                font-size: 13px;
+                line-height: 1.6;
+                color: #555;
+            }
             .document-title {
                 font-size: 20px;
                 font-weight: bold;
                 margin: 20px 0;
+                text-align: center;
             }
             .order-info {
                 display: flex;
@@ -188,10 +205,18 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
     </head>
     <body>
         <div class="header">
-            <div class="company-name">${empresaSettings.empresaNome || "SUA EMPRESA LTDA"}</div>
-            <div>CNPJ: ${empresaSettings.empresaCNPJ || "00.000.000/0001-00"} | Telefone: ${empresaSettings.empresaTelefone || "(00) 0000-0000"}</div>
-            <div>Email: ${empresaSettings.empresaEmail || "contato@empresa.com.br"}</div>
-            <div>Endereço: ${empresaSettings.empresaEndereco || "Sua Rua, 123 - Sua Cidade - UF - CEP 00000-000"}</div>
+            <div class="header-left">
+                <div class="company-name">${empresaSettings.empresaNome || "SUA EMPRESA LTDA"}</div>
+                <div class="company-info">
+                    <div>CNPJ: ${empresaSettings.empresaCNPJ || "00.000.000/0001-00"}</div>
+                    <div>Telefone: ${empresaSettings.empresaTelefone || "(00) 0000-0000"}</div>
+                    <div>Email: ${empresaSettings.empresaEmail || "contato@empresa.com.br"}</div>
+                    <div>Endereço: ${empresaSettings.empresaEndereco || "Sua Rua, 123 - Sua Cidade - UF"}</div>
+                </div>
+            </div>
+            ${empresaSettings.empresaLogoUri ? `
+                <img src="${empresaSettings.empresaLogoUri}" alt="Logo da Empresa" class="company-logo" />
+            ` : ''}
         </div>
 
         <div class="document-title">NOTA DE PEDIDO Nº ${pedido.id}</div>
