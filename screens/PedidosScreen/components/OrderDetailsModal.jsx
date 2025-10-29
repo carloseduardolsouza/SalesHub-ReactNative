@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import { Download } from "lucide-react-native";
+import { Download, Edit } from "lucide-react-native";
 import { getStatusColor, getStatusText } from "../utils/statusHelpers";
 
 const metodoPagamentoOptions = [
@@ -23,6 +23,7 @@ const OrderDetailsModal = ({
   order,
   clientes,
   onExportPDF,
+  onEditOrder,
 }) => {
   if (!order) return null;
 
@@ -34,13 +35,24 @@ const OrderDetailsModal = ({
             <View style={styles.header}>
               <Text style={styles.modalTitle}>Pedido #{order.id}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.exportButton}
-              onPress={() => onExportPDF(order, clientes)}
-            >
-              <Download size={20} color="#fff" />
-              <Text style={styles.exportButtonText}>Exportar PDF</Text>
-            </TouchableOpacity>
+            
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => onEditOrder(order)}
+              >
+                <Edit size={20} color="#fff" />
+                <Text style={styles.editButtonText}>Editar Pedido</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.exportButton}
+                onPress={() => onExportPDF(order, clientes)}
+              >
+                <Download size={20} color="#fff" />
+                <Text style={styles.exportButtonText}>Exportar PDF</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.detailLabel}>Cliente:</Text>
             <Text style={styles.detailValue}>{order.cliente}</Text>
@@ -146,14 +158,36 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#333",
   },
-  exportButton: {
+  actionButtons: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
+  editButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF9800",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  editButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    marginLeft: 5,
+    fontSize: 14,
+  },
+  exportButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#4CAF50",
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
-    marginBottom: 20,
   },
   exportButtonText: {
     color: "#fff",

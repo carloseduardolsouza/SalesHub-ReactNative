@@ -39,6 +39,10 @@ const PedidosScreen = () => {
   const [showOrderDetailsModal, setShowOrderDetails] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
+  // Estados para edição
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState(null);
+
   // Estado do novo pedido
   const [newOrder, setNewOrder] = useState({
     cliente: '',
@@ -70,7 +74,6 @@ const PedidosScreen = () => {
       setProdutos(produtosData ? JSON.parse(produtosData) : []);
       setIndustrias(industriasData ? JSON.parse(industriasData) : []);
       
-      // Carregar configurações da empresa
       if (settingsData) {
         const settings = JSON.parse(settingsData);
         setEmpresaSettings({
@@ -81,7 +84,6 @@ const PedidosScreen = () => {
           empresaEndereco: settings.empresaEndereco || '',
           empresaLogoUri: settings.empresaLogoUri || null
         });
-        console.log('Configurações da empresa carregadas:', settings);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -115,6 +117,19 @@ const PedidosScreen = () => {
     setFilteredPedidos(filtered);
   };
 
+  const resetOrderForm = () => {
+    setNewOrder({
+      cliente: '',
+      produtos: [],
+      desconto: { tipo: 'percentual', valor: '' },
+      metodoPagamento: 'dinheiro',
+      prazos: [],
+      observacoes: '',
+    });
+    setIsEditMode(false);
+    setEditingOrderId(null);
+  };
+
   const createNewOrder = async () => {
     if (!newOrder.cliente || newOrder.produtos.length === 0) {
       Alert.alert('Erro', 'Selecione um cliente e pelo menos um produto!');
@@ -137,31 +152,86 @@ const PedidosScreen = () => {
       prazos: newOrder.prazos,
       total,
       observacoes: newOrder.observacoes,
-      status: 'pendente', // Status sempre será pendente ao criar
+      status: 'pendente',
       data: new Date().toISOString(),
     };
 
     const updatedPedidos = [pedido, ...pedidos];
     await savePedidos(updatedPedidos);
 
-    setNewOrder({
-      cliente: '',
-      produtos: [],
-      desconto: { tipo: 'percentual', valor: '' },
-      metodoPagamento: 'dinheiro',
-      prazos: [],
-      observacoes: '',
-    });
-
+    resetOrderForm();
     setShowNewOrderModal(false);
     Alert.alert('Sucesso', 'Pedido criado com sucesso!');
   };
 
+  const handleEditOrder = (order) => {
+    // Fechar modal de detalhes
+    setShowOrderDetails(false);
+    
+    // Configurar o formulário com os dados do pedido
+    setNewOrder({
+      cliente: order.cliente,
+      produtos: order.produtos,
+      desconto: order.desconto || { tipo: 'percentual', valor: '' },
+      metodoPagamento: order.metodoPagamento,
+      prazos: order.prazos || [],
+      observacoes: order.observacoes || '',
+    });
+
+    // Ativar modo de edição
+    setIsEditMode(true);
+    setEditingOrderId(order.id);
+    
+    // Abrir modal de edição
+    setShowNewOrderModal(true);
+  };
+
+  const updateOrder = async () => {
+    if (!newOrder.cliente || newOrder.produtos.length === 0) {
+      Alert.alert('Erro', 'Selecione um cliente e pelo menos um produto!');
+      return;
+    }
+
+    if (newOrder.metodoPagamento === 'boleto' && newOrder.prazos.length === 0) {
+      Alert.alert('Erro', 'Para boleto, adicione pelo menos um prazo de pagamento!');
+      return;
+    }
+
+    const { total } = calculateOrderTotals(newOrder);
+
+    const updatedPedidos = pedidos.map(pedido => {
+      if (pedido.id === editingOrderId) {
+        return {
+          ...pedido,
+          cliente: newOrder.cliente,
+          produtos: newOrder.produtos,
+          desconto: newOrder.desconto,
+          metodoPagamento: newOrder.metodoPagamento,
+          prazos: newOrder.prazos,
+          total,
+          observacoes: newOrder.observacoes,
+          // Manter data original e status
+          data: pedido.data,
+          status: pedido.status,
+        };
+      }
+      return pedido;
+    });
+
+    await savePedidos(updatedPedidos);
+
+    resetOrderForm();
+    setShowNewOrderModal(false);
+    Alert.alert('Sucesso', 'Pedido atualizado com sucesso!');
+  };
+
+  const handleCloseOrderModal = () => {
+    resetOrderForm();
+    setShowNewOrderModal(false);
+  };
+
   const exportOrderToPDF = async (pedido) => {
     try {
-      console.log('Exportando PDF com configurações:', empresaSettings);
-      
-      // Gerar HTML com os dados da empresa
       const htmlContent = generateOrderHTML(pedido, clientes, empresaSettings);
       const fileName = `NotaPedido_${pedido.id}_${new Date().getTime()}.pdf`;
 
@@ -199,7 +269,10 @@ const PedidosScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Header onAddPress={() => setShowNewOrderModal(true)} />
+      <Header onAddPress={() => {
+        resetOrderForm();
+        setShowNewOrderModal(true);
+      }} />
 
       <SearchAndFilters
         searchText={searchText}
@@ -215,14 +288,16 @@ const PedidosScreen = () => {
 
       <NewOrderModal
         visible={showNewOrderModal}
-        onClose={() => setShowNewOrderModal(false)}
+        onClose={handleCloseOrderModal}
         newOrder={newOrder}
         setNewOrder={setNewOrder}
         clientes={clientes}
         produtos={produtos}
         industrias={industrias}
         onCreateOrder={createNewOrder}
+        onUpdateOrder={updateOrder}
         onOpenProductSelection={() => setShowProductSelectionModal(true)}
+        isEditMode={isEditMode}
       />
 
       <ProductSelectionModal
@@ -240,6 +315,7 @@ const PedidosScreen = () => {
         order={selectedOrder}
         clientes={clientes}
         onExportPDF={exportOrderToPDF}
+        onEditOrder={handleEditOrder}
       />
     </View>
   );
