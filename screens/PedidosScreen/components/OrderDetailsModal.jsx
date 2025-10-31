@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from "react-native";
-import { Download, Edit } from "lucide-react-native";
+import { Download, Edit, FileText } from "lucide-react-native";
 import { getStatusColor, getStatusText } from "../utils/statusHelpers";
 
 const metodoPagamentoOptions = [
@@ -25,7 +26,50 @@ const OrderDetailsModal = ({
   onExportPDF,
   onEditOrder,
 }) => {
+  const [showExportOptions, setShowExportOptions] = useState(false);
+
   if (!order) return null;
+
+  const handleExportWithOptions = () => {
+    Alert.alert(
+      "Exportar PDF",
+      "Como deseja gerar o PDF?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Com Descontos",
+          onPress: () => onExportPDF(order, clientes, true)
+        },
+        {
+          text: "Sem Descontos",
+          onPress: () => onExportPDF(order, clientes, false)
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const calcularValorProdutoComDesconto = (produto) => {
+    const precoTotal = produto.preco * produto.quantidade;
+    
+    if (!produto.desconto?.valor) {
+      return precoTotal;
+    }
+    
+    const valorDesconto = parseFloat(produto.desconto.valor.toString().replace(',', '.')) || 0;
+    let desconto = 0;
+    
+    if (produto.desconto.tipo === 'percentual') {
+      desconto = (precoTotal * valorDesconto) / 100;
+    } else {
+      desconto = valorDesconto;
+    }
+    
+    return Math.max(0, precoTotal - desconto);
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -42,12 +86,12 @@ const OrderDetailsModal = ({
                 onPress={() => onEditOrder(order)}
               >
                 <Edit size={20} color="#fff" />
-                <Text style={styles.editButtonText}>Editar Pedido</Text>
+                <Text style={styles.editButtonText}>Editar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.exportButton}
-                onPress={() => onExportPDF(order, clientes)}
+                onPress={handleExportWithOptions}
               >
                 <Download size={20} color="#fff" />
                 <Text style={styles.exportButtonText}>Exportar PDF</Text>
@@ -83,25 +127,39 @@ const OrderDetailsModal = ({
             )}
 
             <Text style={styles.detailLabel}>Produtos:</Text>
-            {order.produtos?.map((produto, index) => (
-              <View key={index} style={styles.produtoDetail}>
-                <Text style={styles.produtoDetailName}>{produto.nome}</Text>
-                {produto.variacaoSelecionada && (
-                  <Text style={styles.produtoDetailVariation}>
-                    {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+            {order.produtos?.map((produto, index) => {
+              const precoOriginal = produto.preco * produto.quantidade;
+              const precoComDesconto = calcularValorProdutoComDesconto(produto);
+              
+              return (
+                <View key={index} style={styles.produtoDetail}>
+                  <Text style={styles.produtoDetailName}>{produto.nome}</Text>
+                  {produto.variacaoSelecionada && (
+                    <Text style={styles.produtoDetailVariation}>
+                      {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                    </Text>
+                  )}
+                  <Text style={styles.produtoDetailInfo}>
+                    Qtd: {produto.quantidade} x R${" "}
+                    {produto.preco?.toFixed(2) || "0.00"}
                   </Text>
-                )}
-                <Text style={styles.produtoDetailInfo}>
-                  Qtd: {produto.quantidade} x R${" "}
-                  {produto.preco?.toFixed(2) || "0.00"} = R${" "}
-                  {(produto.quantidade * produto.preco).toFixed(2)}
-                </Text>
-              </View>
-            ))}
+                  {produto.desconto?.valor && (
+                    <Text style={styles.produtoDetailDiscount}>
+                      Desconto individual: {produto.desconto.tipo === 'percentual' 
+                        ? `${produto.desconto.valor}%` 
+                        : `R$ ${produto.desconto.valor}`}
+                    </Text>
+                  )}
+                  <Text style={styles.produtoDetailTotal}>
+                    Subtotal: R$ {precoComDesconto.toFixed(2)}
+                  </Text>
+                </View>
+              );
+            })}
 
             {order.desconto?.valor && (
               <>
-                <Text style={styles.detailLabel}>Desconto:</Text>
+                <Text style={styles.detailLabel}>Desconto Geral:</Text>
                 <Text style={styles.detailValue}>
                   {order.desconto.tipo === "percentual"
                     ? `${order.desconto.valor}%`
@@ -238,6 +296,19 @@ const styles = StyleSheet.create({
   produtoDetailInfo: {
     fontSize: 14,
     color: "#666",
+    marginTop: 2,
+  },
+  produtoDetailDiscount: {
+    fontSize: 13,
+    color: "#4CAF50",
+    fontStyle: "italic",
+    marginTop: 4,
+  },
+  produtoDetailTotal: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#2196F3",
+    marginTop: 6,
   },
   totalValue: {
     fontSize: 20,

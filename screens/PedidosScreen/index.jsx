@@ -43,11 +43,11 @@ const PedidosScreen = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState(null);
 
-  // Estado do novo pedido
+  // Estado do novo pedido (com descontos individuais)
   const [newOrder, setNewOrder] = useState({
     cliente: '',
-    produtos: [],
-    desconto: { tipo: 'percentual', valor: '' },
+    produtos: [], // Cada produto terá: { ...produto, desconto: { tipo: 'percentual', valor: '' } }
+    desconto: { tipo: 'percentual', valor: '' }, // Desconto geral
     metodoPagamento: 'dinheiro',
     prazos: [],
     observacoes: '',
@@ -165,24 +165,25 @@ const PedidosScreen = () => {
   };
 
   const handleEditOrder = (order) => {
-    // Fechar modal de detalhes
     setShowOrderDetails(false);
     
-    // Configurar o formulário com os dados do pedido
+    // Garantir que produtos tenham desconto inicializado
+    const produtosComDesconto = order.produtos.map(produto => ({
+      ...produto,
+      desconto: produto.desconto || { tipo: 'percentual', valor: '' }
+    }));
+
     setNewOrder({
       cliente: order.cliente,
-      produtos: order.produtos,
+      produtos: produtosComDesconto,
       desconto: order.desconto || { tipo: 'percentual', valor: '' },
       metodoPagamento: order.metodoPagamento,
       prazos: order.prazos || [],
       observacoes: order.observacoes || '',
     });
 
-    // Ativar modo de edição
     setIsEditMode(true);
     setEditingOrderId(order.id);
-    
-    // Abrir modal de edição
     setShowNewOrderModal(true);
   };
 
@@ -210,7 +211,6 @@ const PedidosScreen = () => {
           prazos: newOrder.prazos,
           total,
           observacoes: newOrder.observacoes,
-          // Manter data original e status
           data: pedido.data,
           status: pedido.status,
         };
@@ -230,10 +230,11 @@ const PedidosScreen = () => {
     setShowNewOrderModal(false);
   };
 
-  const exportOrderToPDF = async (pedido) => {
+  const exportOrderToPDF = async (pedido, clientes, mostrarDescontos = false) => {
     try {
-      const htmlContent = generateOrderHTML(pedido, clientes, empresaSettings);
-      const fileName = `NotaPedido_${pedido.id}_${new Date().getTime()}.pdf`;
+      const htmlContent = generateOrderHTML(pedido, clientes, empresaSettings, mostrarDescontos);
+      const descontoSuffix = mostrarDescontos ? '_com_descontos' : '_sem_descontos';
+      const fileName = `NotaPedido_${pedido.id}${descontoSuffix}_${new Date().getTime()}.pdf`;
 
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
@@ -294,10 +295,8 @@ const PedidosScreen = () => {
         clientes={clientes}
         produtos={produtos}
         industrias={industrias}
-        onCreateOrder={createNewOrder}
-        onUpdateOrder={updateOrder}
+        onCreateOrder={isEditMode ? updateOrder : createNewOrder}
         onOpenProductSelection={() => setShowProductSelectionModal(true)}
-        isEditMode={isEditMode}
       />
 
       <ProductSelectionModal

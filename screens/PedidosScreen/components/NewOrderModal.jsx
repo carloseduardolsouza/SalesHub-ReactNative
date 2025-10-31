@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, Modal, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { Plus, X, Minus } from 'lucide-react-native';
+import { Plus, X, Minus, Tag } from 'lucide-react-native';
 import { calculateOrderTotals } from '../utils/calculations';
 
 const metodoPagamentoOptions = [
@@ -21,6 +21,7 @@ const NewOrderModal = ({
   onOpenProductSelection 
 }) => {
   const [clienteSearch, setClienteSearch] = useState('');
+  const [editingDiscountIndex, setEditingDiscountIndex] = useState(null);
 
   const filteredClientes = useMemo(() => {
     if (!clienteSearch.trim()) return clientes;
@@ -30,7 +31,13 @@ const NewOrderModal = ({
     );
   }, [clientes, clienteSearch]);
 
-  const { subtotal, desconto, total } = calculateOrderTotals(newOrder);
+  const { 
+    subtotalSemDescontos,
+    subtotalComDescontosIndividuais, 
+    descontosTotaisIndividuais,
+    descontoGeral, 
+    total 
+  } = calculateOrderTotals(newOrder);
 
   const updateProductQuantity = (productIndex, newQuantity) => {
     if (newQuantity <= 0) {
@@ -41,6 +48,16 @@ const NewOrderModal = ({
 
     const updatedProducts = newOrder.produtos.map((p, index) =>
       index === productIndex ? { ...p, quantidade: newQuantity } : p
+    );
+    setNewOrder({ ...newOrder, produtos: updatedProducts });
+  };
+
+  const updateProductDiscount = (productIndex, tipo, valor) => {
+    const updatedProducts = newOrder.produtos.map((p, index) =>
+      index === productIndex ? { 
+        ...p, 
+        desconto: { tipo, valor } 
+      } : p
     );
     setNewOrder({ ...newOrder, produtos: updatedProducts });
   };
@@ -67,6 +84,22 @@ const NewOrderModal = ({
   const removePrazo = (index) => {
     const updatedPrazos = newOrder.prazos.filter((_, i) => i !== index);
     setNewOrder({ ...newOrder, prazos: updatedPrazos });
+  };
+
+  const calcularPrecoComDesconto = (produto) => {
+    const precoTotal = produto.preco * produto.quantidade;
+    if (!produto.desconto?.valor) return precoTotal;
+
+    const valorDesconto = parseFloat(produto.desconto.valor.replace(',', '.')) || 0;
+    let desconto = 0;
+    
+    if (produto.desconto.tipo === 'percentual') {
+      desconto = (precoTotal * valorDesconto) / 100;
+    } else {
+      desconto = valorDesconto;
+    }
+    
+    return Math.max(0, precoTotal - desconto);
   };
 
   return (
@@ -128,42 +161,91 @@ const NewOrderModal = ({
                 <View style={styles.productsList}>
                   {newOrder.produtos.map((produto, index) => (
                     <View key={index} style={styles.selectedProduct}>
-                      <View style={styles.productInfo}>
-                        <Text style={styles.productName}>{produto.nome}</Text>
-                        {produto.variacaoSelecionada && (
-                          <Text style={styles.productVariation}>
-                            {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                      <View style={styles.productMainInfo}>
+                        <View style={styles.productInfo}>
+                          <Text style={styles.productName}>{produto.nome}</Text>
+                          {produto.variacaoSelecionada && (
+                            <Text style={styles.productVariation}>
+                              {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                            </Text>
+                          )}
+                          <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
+                        </View>
+
+                        <View style={styles.quantityControls}>
+                          <TouchableOpacity
+                            style={styles.quantityButton}
+                            onPress={() => updateProductQuantity(index, produto.quantidade - 1)}
+                          >
+                            <Minus size={16} color="#666" />
+                          </TouchableOpacity>
+                          <Text style={styles.quantityText}>{produto.quantidade}</Text>
+                          <TouchableOpacity
+                            style={styles.quantityButton}
+                            onPress={() => updateProductQuantity(index, produto.quantidade + 1)}
+                          >
+                            <Plus size={16} color="#666" />
+                          </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.productTotal}>
+                          <Text style={styles.productTotalText}>
+                            R$ {calcularPrecoComDesconto(produto).toFixed(2)}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.removeProductButton}
+                            onPress={() => removeProductFromOrder(index)}
+                          >
+                            <X size={16} color="#f44336" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {/* Desconto Individual */}
+                      <View style={styles.productDiscountSection}>
+                        <TouchableOpacity
+                          style={styles.discountToggle}
+                          onPress={() => setEditingDiscountIndex(editingDiscountIndex === index ? null : index)}
+                        >
+                          <Tag size={16} color="#FF9800" />
+                          <Text style={styles.discountToggleText}>
+                            {produto.desconto?.valor ? 'Editar desconto' : 'Adicionar desconto'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {editingDiscountIndex === index && (
+                          <View style={styles.discountControls}>
+                            <View style={styles.discountTipoContainer}>
+                              <Picker
+                                selectedValue={produto.desconto?.tipo || 'percentual'}
+                                style={styles.discountTipoPicker}
+                                onValueChange={(value) =>
+                                  updateProductDiscount(index, value, produto.desconto?.valor || '')
+                                }
+                              >
+                                <Picker.Item label="%" value="percentual" />
+                                <Picker.Item label="R$" value="fixo" />
+                              </Picker>
+                            </View>
+                            <TextInput
+                              style={styles.discountInput}
+                              placeholder={produto.desconto?.tipo === 'percentual' ? '0' : '0,00'}
+                              value={produto.desconto?.valor || ''}
+                              onChangeText={(value) =>
+                                updateProductDiscount(index, produto.desconto?.tipo || 'percentual', value)
+                              }
+                              keyboardType="numeric"
+                            />
+                          </View>
+                        )}
+
+                        {produto.desconto?.valor && (
+                          <Text style={styles.discountApplied}>
+                            Desconto aplicado: {produto.desconto.tipo === 'percentual' 
+                              ? `${produto.desconto.valor}%` 
+                              : `R$ ${produto.desconto.valor}`}
                           </Text>
                         )}
-                        <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
-                      </View>
-
-                      <View style={styles.quantityControls}>
-                        <TouchableOpacity
-                          style={styles.quantityButton}
-                          onPress={() => updateProductQuantity(index, produto.quantidade - 1)}
-                        >
-                          <Minus size={16} color="#666" />
-                        </TouchableOpacity>
-                        <Text style={styles.quantityText}>{produto.quantidade}</Text>
-                        <TouchableOpacity
-                          style={styles.quantityButton}
-                          onPress={() => updateProductQuantity(index, produto.quantidade + 1)}
-                        >
-                          <Plus size={16} color="#666" />
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={styles.productTotal}>
-                        <Text style={styles.productTotalText}>
-                          R$ {(produto.preco * produto.quantidade).toFixed(2)}
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.removeProductButton}
-                          onPress={() => removeProductFromOrder(index)}
-                        >
-                          <X size={16} color="#f44336" />
-                        </TouchableOpacity>
                       </View>
                     </View>
                   ))}
@@ -177,13 +259,29 @@ const NewOrderModal = ({
                 <Text style={styles.sectionTitle}>Resumo</Text>
 
                 <View style={styles.resumoLine}>
-                  <Text style={styles.resumoLabel}>Subtotal:</Text>
-                  <Text style={styles.resumoValue}>R$ {subtotal.toFixed(2)}</Text>
+                  <Text style={styles.resumoLabel}>Subtotal (sem descontos):</Text>
+                  <Text style={styles.resumoValue}>R$ {subtotalSemDescontos.toFixed(2)}</Text>
                 </View>
 
-                {/* Desconto */}
+                {descontosTotaisIndividuais > 0 && (
+                  <View style={styles.resumoLine}>
+                    <Text style={styles.resumoLabel}>Descontos nos produtos:</Text>
+                    <Text style={[styles.resumoValue, styles.descontoValue]}>
+                      -R$ {descontosTotaisIndividuais.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+
+                {descontosTotaisIndividuais > 0 && (
+                  <View style={styles.resumoLine}>
+                    <Text style={styles.resumoLabel}>Subtotal com descontos:</Text>
+                    <Text style={styles.resumoValue}>R$ {subtotalComDescontosIndividuais.toFixed(2)}</Text>
+                  </View>
+                )}
+
+                {/* Desconto Geral */}
                 <View style={styles.descontoSection}>
-                  <Text style={styles.descontoLabel}>Desconto:</Text>
+                  <Text style={styles.descontoLabel}>Desconto Geral no Pedido:</Text>
                   <View style={styles.descontoControls}>
                     <View style={styles.descontoTipoContainer}>
                       <Picker
@@ -215,17 +313,17 @@ const NewOrderModal = ({
                   </View>
                 </View>
 
-                {desconto > 0 && (
+                {descontoGeral > 0 && (
                   <View style={styles.resumoLine}>
-                    <Text style={styles.resumoLabel}>Desconto aplicado:</Text>
+                    <Text style={styles.resumoLabel}>Desconto geral aplicado:</Text>
                     <Text style={[styles.resumoValue, styles.descontoValue]}>
-                      -R$ {desconto.toFixed(2)}
+                      -R$ {descontoGeral.toFixed(2)}
                     </Text>
                   </View>
                 )}
 
                 <View style={[styles.resumoLine, styles.totalLine]}>
-                  <Text style={styles.totalLabel}>Total:</Text>
+                  <Text style={styles.totalLabel}>Total Final:</Text>
                   <Text style={styles.totalValue}>R$ {total.toFixed(2)}</Text>
                 </View>
               </View>
@@ -448,12 +546,15 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
   },
   selectedProduct: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#fff',
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  productMainInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   productInfo: {
     flex: 1,
@@ -512,6 +613,55 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  productDiscountSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  discountToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  discountToggleText: {
+    fontSize: 14,
+    color: '#FF9800',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  discountControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  discountTipoContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginRight: 10,
+    minWidth: 80,
+  },
+  discountTipoPicker: {
+    height: 40,
+  },
+  discountInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+  },
+  discountApplied: {
+    fontSize: 12,
+    color: '#4CAF50',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   resumoFinanceiro: {
     backgroundColor: '#f8f9fa',
     borderRadius: 8,
@@ -554,11 +704,16 @@ const styles = StyleSheet.create({
   },
   descontoSection: {
     marginBottom: 10,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
   },
   descontoLabel: {
     fontSize: 16,
     color: '#666',
     marginBottom: 8,
+    fontWeight: '500',
   },
   descontoControls: {
     flexDirection: 'row',

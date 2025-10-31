@@ -5,7 +5,7 @@ const metodoPagamentoOptions = [
   { value: 'boleto', label: 'Boleto' }
 ];
 
-export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
+export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDescontos = false) => {
   const cliente = clientes.find(c => c.nomeFantasia === pedido.cliente) || { 
     nomeFantasia: pedido.cliente, 
     razaoSocial: '', 
@@ -42,19 +42,67 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
 
   const enderecoFormatado = formatarEndereco(cliente.endereco);
 
-  const subtotal = pedido.produtos.reduce((sum, produto) => 
-    sum + (produto.preco * produto.quantidade), 0
-  );
-
-  let desconto = 0;
-  if (pedido.desconto?.valor) {
-    const valorDesconto = parseFloat(pedido.desconto.valor.toString().replace(',', '.')) || 0;
-    if (pedido.desconto.tipo === 'percentual') {
-      desconto = (subtotal * valorDesconto) / 100;
+  // Cálculos com ou sem descontos
+  const calcularValorProduto = (produto) => {
+    const precoTotal = produto.preco * produto.quantidade;
+    
+    if (!mostrarDescontos) {
+      return precoTotal;
+    }
+    
+    if (!produto.desconto?.valor) {
+      return precoTotal;
+    }
+    
+    const valorDesconto = parseFloat(produto.desconto.valor.toString().replace(',', '.')) || 0;
+    let desconto = 0;
+    
+    if (produto.desconto.tipo === 'percentual') {
+      desconto = (precoTotal * valorDesconto) / 100;
     } else {
       desconto = valorDesconto;
     }
+    
+    return Math.max(0, precoTotal - desconto);
+  };
+
+  const subtotalSemDescontos = pedido.produtos.reduce((sum, produto) => 
+    sum + (produto.preco * produto.quantidade), 0
+  );
+
+  let subtotalComDescontosIndividuais = subtotalSemDescontos;
+  let descontosTotaisIndividuais = 0;
+
+  if (mostrarDescontos) {
+    pedido.produtos.forEach(produto => {
+      const precoTotal = produto.preco * produto.quantidade;
+      if (produto.desconto?.valor) {
+        const valorDesconto = parseFloat(produto.desconto.valor.toString().replace(',', '.')) || 0;
+        let desconto = 0;
+        
+        if (produto.desconto.tipo === 'percentual') {
+          desconto = (precoTotal * valorDesconto) / 100;
+        } else {
+          desconto = valorDesconto;
+        }
+        
+        descontosTotaisIndividuais += desconto;
+      }
+    });
+    subtotalComDescontosIndividuais = subtotalSemDescontos - descontosTotaisIndividuais;
   }
+
+  let descontoGeral = 0;
+  if (mostrarDescontos && pedido.desconto?.valor) {
+    const valorDesconto = parseFloat(pedido.desconto.valor.toString().replace(',', '.')) || 0;
+    if (pedido.desconto.tipo === 'percentual') {
+      descontoGeral = (subtotalComDescontosIndividuais * valorDesconto) / 100;
+    } else {
+      descontoGeral = valorDesconto;
+    }
+  }
+
+  const totalFinal = mostrarDescontos ? pedido.total : subtotalSemDescontos;
 
   const metodoPagamento = metodoPagamentoOptions.find(m => 
     m.value === pedido.metodoPagamento
@@ -151,6 +199,12 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 font-size: 13px;
                 margin-top: 3px;
             }
+            .product-discount {
+                color: #4CAF50;
+                font-size: 12px;
+                margin-top: 3px;
+                font-style: italic;
+            }
             .totals-section {
                 margin-top: 30px;
                 border-top: 2px solid #ddd;
@@ -169,6 +223,9 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 border-top: 1px solid #ddd;
                 padding-top: 8px;
                 margin-top: 8px;
+            }
+            .discount-line {
+                color: #f44336;
             }
             .payment-section {
                 margin-top: 30px;
@@ -250,7 +307,11 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                 </tr>
             </thead>
             <tbody>
-                ${pedido.produtos.map(produto => `
+                ${pedido.produtos.map(produto => {
+                  const precoOriginal = produto.preco * produto.quantidade;
+                  const precoFinal = calcularValorProduto(produto);
+                  
+                  return `
                     <tr>
                         <td>
                             ${produto.nome}
@@ -259,29 +320,47 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
                                     ${produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: ${produto.variacaoSelecionada.valor}
                                 </div>
                             ` : ''}
+                            ${mostrarDescontos && produto.desconto?.valor ? `
+                                <div class="product-discount">
+                                    Desconto: ${produto.desconto.tipo === 'percentual' 
+                                      ? produto.desconto.valor + '%' 
+                                      : 'R$ ' + produto.desconto.valor}
+                                </div>
+                            ` : ''}
                         </td>
                         <td style="text-align: center;">${produto.quantidade}</td>
                         <td style="text-align: right;">R$ ${produto.preco.toFixed(2).replace('.', ',')}</td>
-                        <td style="text-align: right;">R$ ${(produto.preco * produto.quantidade).toFixed(2).replace('.', ',')}</td>
+                        <td style="text-align: right;">R$ ${precoFinal.toFixed(2).replace('.', ',')}</td>
                     </tr>
-                `).join('')}
+                  `;
+                }).join('')}
             </tbody>
         </table>
 
         <div class="totals-section">
             <div class="total-line">
                 <span>Subtotal:</span>
-                <span>R$ ${subtotal.toFixed(2).replace('.', ',')}</span>
+                <span>R$ ${subtotalSemDescontos.toFixed(2).replace('.', ',')}</span>
             </div>
-            ${desconto > 0 ? `
+            ${mostrarDescontos && descontosTotaisIndividuais > 0 ? `
+            <div class="total-line discount-line">
+                <span>Descontos nos produtos:</span>
+                <span>- R$ ${descontosTotaisIndividuais.toFixed(2).replace('.', ',')}</span>
+            </div>
             <div class="total-line">
-                <span>Desconto (${pedido.desconto.tipo === 'percentual' ? pedido.desconto.valor + '%' : 'R$ ' + pedido.desconto.valor}):</span>
-                <span>- R$ ${desconto.toFixed(2).replace('.', ',')}</span>
+                <span>Subtotal com descontos:</span>
+                <span>R$ ${subtotalComDescontosIndividuais.toFixed(2).replace('.', ',')}</span>
+            </div>
+            ` : ''}
+            ${mostrarDescontos && descontoGeral > 0 ? `
+            <div class="total-line discount-line">
+                <span>Desconto geral (${pedido.desconto.tipo === 'percentual' ? pedido.desconto.valor + '%' : 'R$ ' + pedido.desconto.valor}):</span>
+                <span>- R$ ${descontoGeral.toFixed(2).replace('.', ',')}</span>
             </div>
             ` : ''}
             <div class="total-line total-final">
                 <span>TOTAL GERAL:</span>
-                <span>R$ ${pedido.total.toFixed(2).replace('.', ',')}</span>
+                <span>R$ ${totalFinal.toFixed(2).replace('.', ',')}</span>
             </div>
         </div>
 
@@ -311,6 +390,7 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings) => {
         <div class="footer">
             <p>Este documento é uma nota de pedido e não possui valor fiscal.</p>
             <p>Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+            ${mostrarDescontos ? '<p><em>Nota gerada com descontos aplicados</em></p>' : '<p><em>Nota gerada sem exibição de descontos</em></p>'}
         </div>
     </body>
     </html>
