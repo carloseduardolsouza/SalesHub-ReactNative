@@ -14,7 +14,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
-import { Camera, Image as ImageIcon, Search, Plus, X, Edit } from 'lucide-react-native';
+import { Camera, Image as ImageIcon, Search, Plus, X, Edit, ChevronLeft, ChevronRight } from 'lucide-react-native';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
@@ -26,11 +26,12 @@ const ProdutosScreen = () => {
   const [showImagePickerModal, setShowImagePickerModal] = useState(false);
   const [industrias, setIndustrias] = useState([]);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const [novoProduto, setNovoProduto] = useState({
     nome: '',
     preco: '',
-    imagem: null,
+    imagens: [],
     industria: '',
     descricao: '',
     variacoes: []
@@ -55,8 +56,13 @@ const ProdutosScreen = () => {
       const produtosData = await AsyncStorage.getItem('produtos');
       if (produtosData) {
         const produtosParsed = JSON.parse(produtosData);
-        setProdutos(produtosParsed);
-        setFilteredProducts(produtosParsed);
+        // Migrar produtos antigos com imagem única para array
+        const produtosMigrados = produtosParsed.map(p => ({
+          ...p,
+          imagens: p.imagens || (p.imagem ? [p.imagem] : [])
+        }));
+        setProdutos(produtosMigrados);
+        setFilteredProducts(produtosMigrados);
       }
     } catch (error) {
       console.error('Erro ao carregar produtos:', error);
@@ -115,7 +121,7 @@ const ProdutosScreen = () => {
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
         base64: true,
@@ -124,7 +130,10 @@ const ProdutosScreen = () => {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
-        setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
+        setNovoProduto(prev => ({ 
+          ...prev, 
+          imagens: [...prev.imagens, base64Data] 
+        }));
       }
     } catch (error) {
       console.error('Erro ao acessar a câmera:', error);
@@ -135,7 +144,7 @@ const ProdutosScreen = () => {
   const openGallery = async () => {
     setShowImagePickerModal(false);
 
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { granted} = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
       Alert.alert(
         'Permissão Negada',
@@ -146,16 +155,20 @@ const ProdutosScreen = () => {
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
-        setNovoProduto(prev => ({ ...prev, imagem: base64Data }));
+        const novasImagens = result.assets.map(asset => 
+          `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`
+        );
+        setNovoProduto(prev => ({ 
+          ...prev, 
+          imagens: [...prev.imagens, ...novasImagens] 
+        }));
       }
     } catch (error) {
       console.error('Erro ao acessar a galeria:', error);
@@ -163,16 +176,19 @@ const ProdutosScreen = () => {
     }
   };
 
-  const removeImage = () => {
+  const removeImage = (index) => {
     Alert.alert(
       'Remover Imagem',
-      'Deseja remover a imagem selecionada?',
+      'Deseja remover esta imagem?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Remover',
           style: 'destructive',
-          onPress: () => setNovoProduto(prev => ({ ...prev, imagem: null }))
+          onPress: () => setNovoProduto(prev => ({
+            ...prev,
+            imagens: prev.imagens.filter((_, i) => i !== index)
+          }))
         }
       ]
     );
@@ -241,7 +257,7 @@ const ProdutosScreen = () => {
       id: produto.id,
       nome: produto.nome,
       preco: produto.preco.toFixed(2).replace('.', ','),
-      imagem: produto.imagem,
+      imagens: produto.imagens || [],
       industria: produto.industria,
       descricao: produto.descricao || '',
       variacoes: produto.variacoes || []
@@ -265,14 +281,13 @@ const ProdutosScreen = () => {
 
     try {
       if (isEditMode) {
-        // Atualizar produto existente
         const produtosAtualizados = produtos.map(p =>
           p.id === novoProduto.id
             ? {
                 ...p,
                 nome: novoProduto.nome.trim(),
                 preco: preco,
-                imagem: novoProduto.imagem,
+                imagens: novoProduto.imagens,
                 industria: novoProduto.industria,
                 descricao: novoProduto.descricao.trim(),
                 variacoes: novoProduto.variacoes,
@@ -283,12 +298,11 @@ const ProdutosScreen = () => {
         await saveProdutos(produtosAtualizados);
         Alert.alert('Sucesso', 'Produto atualizado com sucesso!');
       } else {
-        // Criar novo produto
         const produto = {
           id: Date.now(),
           nome: novoProduto.nome.trim(),
           preco: preco,
-          imagem: novoProduto.imagem,
+          imagens: novoProduto.imagens,
           industria: novoProduto.industria,
           descricao: novoProduto.descricao.trim(),
           variacoes: novoProduto.variacoes,
@@ -300,11 +314,10 @@ const ProdutosScreen = () => {
         Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
       }
 
-      // Limpar formulário
       setNovoProduto({
         nome: '',
         preco: '',
-        imagem: null,
+        imagens: [],
         industria: '',
         descricao: '',
         variacoes: []
@@ -341,34 +354,62 @@ const ProdutosScreen = () => {
     );
   };
 
-  const renderProductCard = ({ item }) => (
-    <TouchableOpacity
-      style={styles.productCard}
-      onPress={() => {
-        setSelectedProduct(item);
-        setShowProductModal(true);
-      }}
-      activeOpacity={0.8}
-    >
-      <Image
-        source={{
-          uri: item.imagem || 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem'
+  const nextImage = () => {
+    if (selectedProduct && selectedProduct.imagens) {
+      setCurrentImageIndex((prev) => 
+        (prev + 1) % selectedProduct.imagens.length
+      );
+    }
+  };
+
+  const prevImage = () => {
+    if (selectedProduct && selectedProduct.imagens) {
+      setCurrentImageIndex((prev) => 
+        prev === 0 ? selectedProduct.imagens.length - 1 : prev - 1
+      );
+    }
+  };
+
+  const renderProductCard = ({ item }) => {
+    const imagemPrincipal = item.imagens && item.imagens.length > 0 
+      ? item.imagens[0] 
+      : 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem';
+    
+    return (
+      <TouchableOpacity
+        style={styles.productCard}
+        onPress={() => {
+          setSelectedProduct(item);
+          setCurrentImageIndex(0);
+          setShowProductModal(true);
         }}
-        style={styles.productImage}
-        resizeMode="cover"
-      />
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
-        <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
-        <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
-        {item.variacoes && item.variacoes.length > 0 && (
-          <Text style={styles.productVariations}>
-            {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+        activeOpacity={0.8}
+      >
+        <View style={styles.cardImageContainer}>
+          <Image
+            source={{ uri: imagemPrincipal }}
+            style={styles.productImage}
+            resizeMode="cover"
+          />
+          {item.imagens && item.imagens.length > 1 && (
+            <View style={styles.imageCountBadge}>
+              <Text style={styles.imageCountText}>+{item.imagens.length - 1}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
+          <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
+          <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
+          {item.variacoes && item.variacoes.length > 0 && (
+            <Text style={styles.productVariations}>
+              {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -419,13 +460,56 @@ const ProdutosScreen = () => {
             <ScrollView>
               {selectedProduct && (
                 <>
-                  <Image
-                    source={{
-                      uri: selectedProduct.imagem || 'https://via.placeholder.com/200x200/666666/white?text=Sem+Imagem'
-                    }}
-                    style={styles.productDetailImage}
-                    resizeMode="cover"
-                  />
+                  {/* Galeria de Imagens com Navegação */}
+                  {selectedProduct.imagens && selectedProduct.imagens.length > 0 ? (
+                    <View style={styles.imageGallery}>
+                      <Image
+                        source={{ uri: selectedProduct.imagens[currentImageIndex] }}
+                        style={styles.productDetailImage}
+                        resizeMode="cover"
+                      />
+                      {selectedProduct.imagens.length > 1 && (
+                        <>
+                          <TouchableOpacity style={styles.navButtonLeft} onPress={prevImage}>
+                            <ChevronLeft size={30} color="#fff" />
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.navButtonRight} onPress={nextImage}>
+                            <ChevronRight size={30} color="#fff" />
+                          </TouchableOpacity>
+                          <View style={styles.imageIndicator}>
+                            <Text style={styles.imageIndicatorText}>
+                              {currentImageIndex + 1} / {selectedProduct.imagens.length}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  ) : (
+                    <Image
+                      source={{ uri: 'https://via.placeholder.com/200x200/666666/white?text=Sem+Imagem' }}
+                      style={styles.productDetailImage}
+                      resizeMode="cover"
+                    />
+                  )}
+
+                  {/* Thumbnails */}
+                  {selectedProduct.imagens && selectedProduct.imagens.length > 1 && (
+                    <ScrollView horizontal style={styles.thumbnailContainer} showsHorizontalScrollIndicator={false}>
+                      {selectedProduct.imagens.map((img, index) => (
+                        <TouchableOpacity 
+                          key={index} 
+                          onPress={() => setCurrentImageIndex(index)}
+                          style={[
+                            styles.thumbnail,
+                            currentImageIndex === index && styles.thumbnailActive
+                          ]}
+                        >
+                          <Image source={{ uri: img }} style={styles.thumbnailImage} resizeMode="cover" />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+
                   <Text style={styles.productDetailName}>{selectedProduct.nome}</Text>
                   <Text style={styles.productDetailCompany}>{selectedProduct.industria}</Text>
 
@@ -497,25 +581,32 @@ const ProdutosScreen = () => {
                 {isEditMode ? 'Editar Produto' : 'Cadastrar Novo Produto'}
               </Text>
 
-              <Text style={styles.inputLabel}>Imagem do Produto</Text>
+              <Text style={styles.inputLabel}>Imagens do Produto ({novoProduto.imagens.length})</Text>
+              
+              {/* Grid de Imagens */}
+              {novoProduto.imagens.length > 0 && (
+                <ScrollView horizontal style={styles.imagesGrid} showsHorizontalScrollIndicator={false}>
+                  {novoProduto.imagens.map((img, index) => (
+                    <View key={index} style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: img }} style={styles.imagePreview} resizeMode="cover" />
+                      <TouchableOpacity 
+                        style={styles.removeImageButtonSmall} 
+                        onPress={() => removeImage(index)}
+                      >
+                        <X size={14} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+
               <TouchableOpacity
-                style={styles.imageSelector}
+                style={styles.addImageButton}
                 onPress={() => setShowImagePickerModal(true)}
                 activeOpacity={0.8}
               >
-                {novoProduto.imagem ? (
-                  <View style={styles.imageContainer}>
-                    <Image source={{ uri: novoProduto.imagem }} style={styles.selectedImage} resizeMode="cover" />
-                    <TouchableOpacity style={styles.removeImageButton} onPress={removeImage}>
-                      <X size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <ImageIcon size={40} color="#999" />
-                    <Text style={styles.imagePlaceholderText}>Toque para adicionar foto</Text>
-                  </View>
-                )}
+                <ImageIcon size={24} color="#007AFF" />
+                <Text style={styles.addImageButtonText}>Adicionar Imagem</Text>
               </TouchableOpacity>
 
               <Text style={styles.inputLabel}>Nome do Produto *</Text>
@@ -622,7 +713,7 @@ const ProdutosScreen = () => {
                     setNovoProduto({
                       nome: '',
                       preco: '',
-                      imagem: null,
+                      imagens: [],
                       industria: '',
                       descricao: '',
                       variacoes: []
@@ -754,12 +845,29 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     minWidth: 0,
   },
+  cardImageContainer: {
+    position: 'relative',
+  },
   productImage: {
     width: '100%',
     height: 120,
     borderRadius: 8,
     marginBottom: 8,
     backgroundColor: '#f0f0f0',
+  },
+  imageCountBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  imageCountText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   productInfo: {
     alignItems: 'center',
@@ -812,13 +920,71 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
     width: '90%',
   },
-  productDetailImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 10,
-    alignSelf: 'center',
+  imageGallery: {
+    position: 'relative',
     marginBottom: 15,
+  },
+  productDetailImage: {
+    width: '100%',
+    height: 250,
+    borderRadius: 10,
     backgroundColor: '#f0f0f0',
+  },
+  navButtonLeft: {
+    position: 'absolute',
+    left: 10,
+    top: '50%',
+    marginTop: -20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  navButtonRight: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    marginTop: -20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageIndicator: {
+    position: 'absolute',
+    bottom: 10,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  imageIndicatorText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  thumbnailContainer: {
+    marginVertical: 10,
+    maxHeight: 70,
+  },
+  thumbnail: {
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  thumbnailActive: {
+    borderColor: '#007AFF',
+  },
+  thumbnailImage: {
+    width: 60,
+    height: 60,
   },
   productDetailName: {
     fontSize: 24,
@@ -943,48 +1109,48 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  imageSelector: {
+  imagesGrid: {
+    marginBottom: 10,
+    maxHeight: 120,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginRight: 10,
+  },
+  imagePreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+  },
+  removeImageButtonSmall: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: '#f44336',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#f8f8f8',
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: '#007AFF',
     borderStyle: 'dashed',
-    height: 150,
+    padding: 15,
     marginBottom: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
   },
-  imageContainer: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
-  },
-  selectedImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 6,
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#f44336',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-  },
-  imagePlaceholder: {
-    alignItems: 'center',
-  },
-  imagePlaceholderText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
+  addImageButtonText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
   },
   pickerContainer: {
     backgroundColor: '#f8f8f8',
