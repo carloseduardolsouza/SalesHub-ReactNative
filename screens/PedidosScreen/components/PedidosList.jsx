@@ -1,8 +1,8 @@
 import React from 'react';
-import { FlatList, View, Text, StyleSheet } from 'react-native';
+import { FlatList, View, Text, RefreshControl, StyleSheet } from 'react-native';
 import PedidoCard from './PedidoCard';
 
-const PedidosList = ({ pedidos, onSelectPedido }) => (
+const PedidosList = ({ pedidos, onSelectPedido, refreshing, onRefresh }) => (
   <FlatList
     data={pedidos}
     renderItem={({ item }) => (
@@ -11,6 +11,14 @@ const PedidosList = ({ pedidos, onSelectPedido }) => (
     keyExtractor={item => item.id.toString()}
     contentContainerStyle={styles.listContainer}
     showsVerticalScrollIndicator={false}
+    refreshControl={
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        colors={['#2196F3']}
+        tintColor="#2196F3"
+      />
+    }
     ListEmptyComponent={
       <View style={styles.emptyState}>
         <Text style={styles.emptyStateText}>Nenhum pedido encontrado</Text>

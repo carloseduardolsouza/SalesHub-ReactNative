@@ -19,6 +19,7 @@ const PedidosScreen = () => {
   const [clientes, setClientes] = useState([]);
   const [produtos, setProdutos] = useState([]);
   const [industrias, setIndustrias] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [empresaSettings, setEmpresaSettings] = useState({
     empresaNome: '',
     empresaCNPJ: '',
@@ -268,6 +269,12 @@ const PedidosScreen = () => {
     setShowOrderDetails(true);
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
   return (
     <View style={styles.container}>
       <Header onAddPress={() => {
@@ -285,6 +292,8 @@ const PedidosScreen = () => {
       <PedidosList
         pedidos={filteredPedidos}
         onSelectPedido={handleSelectOrder}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
       />
 
       <NewOrderModal
