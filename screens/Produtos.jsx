@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Picker } from '@react-native-picker/picker';
 import { Camera, Image as ImageIcon, Search, Plus, X, Edit, ChevronLeft, ChevronRight } from 'lucide-react-native';
 
@@ -54,19 +55,29 @@ const ProdutosScreen = () => {
   const loadProdutos = async () => {
     try {
       const produtosData = await AsyncStorage.getItem('produtos');
+      console.log('📦 Carregando produtos do AsyncStorage:', produtosData ? 'Dados encontrados' : 'Nenhum dado');
+      
       if (produtosData) {
         const produtosParsed = JSON.parse(produtosData);
-        // Migrar produtos antigos com imagem única para array
+        console.log('✅ Produtos carregados:', produtosParsed.length);
+        
         const produtosMigrados = produtosParsed.map(p => ({
           ...p,
           imagens: p.imagens || (p.imagem ? [p.imagem] : [])
         }));
+        
         setProdutos(produtosMigrados);
         setFilteredProducts(produtosMigrados);
+      } else {
+        console.log('⚠️ Nenhum produto encontrado, inicializando array vazio');
+        setProdutos([]);
+        setFilteredProducts([]);
       }
     } catch (error) {
-      console.error('Erro ao carregar produtos:', error);
+      console.error('❌ Erro ao carregar produtos:', error);
       Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
+      setProdutos([]);
+      setFilteredProducts([]);
     }
   };
 
@@ -82,14 +93,79 @@ const ProdutosScreen = () => {
     }
   };
 
+  // Função para comprimir e redimensionar imagem
+  const compressImage = async (uri) => {
+    try {
+      console.log('🔄 Comprimindo imagem...');
+      
+      // Redimensionar para máximo 800px de largura mantendo proporção
+      const manipulatedImage = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 800 } }], // Reduz o tamanho
+        { 
+          compress: 0.6, // Compressão de 60%
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true
+        }
+      );
+
+      const compressedBase64 = `data:image/jpeg;base64,${manipulatedImage.base64}`;
+      
+      // Calcular tamanho aproximado
+      const sizeKB = (compressedBase64.length * 0.75) / 1024;
+      console.log(`✅ Imagem comprimida: ~${sizeKB.toFixed(0)}KB`);
+      
+      return compressedBase64;
+    } catch (error) {
+      console.error('❌ Erro ao comprimir imagem:', error);
+      throw error;
+    }
+  };
+
   const saveProdutos = async (produtosData) => {
     try {
-      await AsyncStorage.setItem('produtos', JSON.stringify(produtosData));
+      console.log('💾 Salvando produtos no AsyncStorage:', produtosData.length, 'produtos');
+      
+      if (!Array.isArray(produtosData)) {
+        console.error('❌ Erro: produtosData não é um array!', produtosData);
+        throw new Error('Dados inválidos para salvar');
+      }
+
+      // Calcular tamanho total dos dados
+      const jsonString = JSON.stringify(produtosData);
+      const sizeKB = (jsonString.length * 2) / 1024; // UTF-16 = 2 bytes por char
+      console.log(`📊 Tamanho total dos dados: ~${sizeKB.toFixed(0)}KB`);
+      
+      if (sizeKB > 5000) { // Mais de 5MB
+        throw new Error('Dados muito grandes! Reduza o número de imagens ou produtos.');
+      }
+
+      await AsyncStorage.setItem('produtos', jsonString);
+      console.log('✅ Produtos salvos com sucesso no AsyncStorage');
+      
       setProdutos(produtosData);
       setFilteredProducts(produtosData);
+      
+      const verificacao = await AsyncStorage.getItem('produtos');
+      const verificacaoParsed = JSON.parse(verificacao);
+      console.log('🔍 Verificação: produtos salvos =', verificacaoParsed.length);
+      
     } catch (error) {
-      console.error('Erro ao salvar produtos:', error);
-      Alert.alert('Erro', 'Erro ao salvar dados dos produtos');
+      console.error('❌ Erro ao salvar produtos:', error);
+      
+      if (error.message.includes('Row too big')) {
+        Alert.alert(
+          'Dados Muito Grandes',
+          'As imagens são muito pesadas. Por favor:\n\n' +
+          '• Use menos imagens por produto (máx. 3)\n' +
+          '• As imagens já são comprimidas automaticamente\n' +
+          '• Considere deletar produtos antigos se necessário',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Erro', 'Erro ao salvar dados dos produtos. Por favor, tente novamente.');
+      }
+      throw error;
     }
   };
 
@@ -123,17 +199,21 @@ const ProdutosScreen = () => {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.8,
-        base64: true,
+        quality: 0.5, // Reduzir qualidade inicial
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        const base64Data = `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`;
+        
+        // Comprimir a imagem
+        const compressedImage = await compressImage(asset.uri);
+        
         setNovoProduto(prev => ({ 
           ...prev, 
-          imagens: [...prev.imagens, base64Data] 
+          imagens: [...prev.imagens, compressedImage] 
         }));
+        
+        Alert.alert('✅', 'Imagem adicionada e otimizada!');
       }
     } catch (error) {
       console.error('Erro ao acessar a câmera:', error);
@@ -144,7 +224,7 @@ const ProdutosScreen = () => {
   const openGallery = async () => {
     setShowImagePickerModal(false);
 
-    const { granted} = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
       Alert.alert(
         'Permissão Negada',
@@ -157,18 +237,22 @@ const ProdutosScreen = () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.8,
-        base64: true,
+        quality: 0.5, // Reduzir qualidade inicial
+        allowsMultipleSelection: false, // Uma imagem por vez
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const novasImagens = result.assets.map(asset => 
-          `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`
-        );
+        const asset = result.assets[0];
+        
+        // Comprimir a imagem
+        const compressedImage = await compressImage(asset.uri);
+        
         setNovoProduto(prev => ({ 
           ...prev, 
-          imagens: [...prev.imagens, ...novasImagens] 
+          imagens: [...prev.imagens, compressedImage] 
         }));
+        
+        Alert.alert('✅', 'Imagem adicionada e otimizada!');
       }
     } catch (error) {
       console.error('Erro ao acessar a galeria:', error);
@@ -272,6 +356,11 @@ const ProdutosScreen = () => {
       return;
     }
 
+    if (novoProduto.imagens.length > 5) {
+      Alert.alert('Atenção', 'Máximo de 5 imagens por produto para evitar problemas de armazenamento.');
+      return;
+    }
+
     const preco = parseMoneyValue(novoProduto.preco);
 
     if (preco <= 0) {
@@ -280,7 +369,13 @@ const ProdutosScreen = () => {
     }
 
     try {
+      console.log('🔧 Iniciando salvamento de produto...');
+      console.log('📊 Produtos atuais no estado:', produtos.length);
+      console.log('🖼️ Número de imagens:', novoProduto.imagens.length);
+      
       if (isEditMode) {
+        console.log('✏️ Modo de edição: atualizando produto', novoProduto.id);
+        
         const produtosAtualizados = produtos.map(p =>
           p.id === novoProduto.id
             ? {
@@ -295,9 +390,13 @@ const ProdutosScreen = () => {
               }
             : p
         );
+        
+        console.log('📊 Total de produtos após atualização:', produtosAtualizados.length);
         await saveProdutos(produtosAtualizados);
         Alert.alert('Sucesso', 'Produto atualizado com sucesso!');
       } else {
+        console.log('➕ Modo de criação: adicionando novo produto');
+        
         const produto = {
           id: Date.now(),
           nome: novoProduto.nome.trim(),
@@ -309,7 +408,16 @@ const ProdutosScreen = () => {
           dataCadastro: new Date().toISOString()
         };
 
-        const novosProdutos = [produto, ...produtos];
+        console.log('🆕 Novo produto criado:', produto.nome);
+        
+        const produtosAtuais = await AsyncStorage.getItem('produtos');
+        const listaProdutosAtuais = produtosAtuais ? JSON.parse(produtosAtuais) : [];
+        
+        console.log('📊 Produtos no AsyncStorage antes de adicionar:', listaProdutosAtuais.length);
+        
+        const novosProdutos = [produto, ...listaProdutosAtuais];
+        
+        console.log('📊 Total de produtos após adicionar novo:', novosProdutos.length);
         await saveProdutos(novosProdutos);
         Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
       }
@@ -324,9 +432,12 @@ const ProdutosScreen = () => {
       });
       setIsEditMode(false);
       setShowAddProductModal(false);
+      
+      await loadProdutos();
+      
     } catch (error) {
-      console.error('Erro ao salvar produto:', error);
-      Alert.alert('Erro', 'Erro ao salvar produto');
+      console.error('❌ Erro ao salvar produto:', error);
+      // O erro já é tratado dentro de saveProdutos
     }
   };
 
@@ -341,11 +452,15 @@ const ProdutosScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('🗑️ Excluindo produto:', produtoId);
               const produtosAtualizados = produtos.filter(p => p.id !== produtoId);
+              console.log('📊 Produtos restantes:', produtosAtualizados.length);
+              
               await saveProdutos(produtosAtualizados);
               setShowProductModal(false);
               Alert.alert('Sucesso', 'Produto excluído com sucesso!');
             } catch (error) {
+              console.error('❌ Erro ao excluir produto:', error);
               Alert.alert('Erro', 'Erro ao excluir produto');
             }
           }
@@ -415,6 +530,7 @@ const ProdutosScreen = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Produtos</Text>
+        <Text style={styles.headerSubtitle}>Total: {produtos.length} produtos</Text>
       </View>
 
       <View style={styles.searchContainer}>
@@ -453,14 +569,12 @@ const ProdutosScreen = () => {
         }
       />
 
-      {/* Product Details Modal */}
       <Modal visible={showProductModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.productModalContainer}>
             <ScrollView>
               {selectedProduct && (
                 <>
-                  {/* Galeria de Imagens com Navegação */}
                   {selectedProduct.imagens && selectedProduct.imagens.length > 0 ? (
                     <View style={styles.imageGallery}>
                       <Image
@@ -492,7 +606,6 @@ const ProdutosScreen = () => {
                     />
                   )}
 
-                  {/* Thumbnails */}
                   {selectedProduct.imagens && selectedProduct.imagens.length > 1 && (
                     <ScrollView horizontal style={styles.thumbnailContainer} showsHorizontalScrollIndicator={false}>
                       {selectedProduct.imagens.map((img, index) => (
@@ -572,7 +685,6 @@ const ProdutosScreen = () => {
         </View>
       </Modal>
 
-      {/* Add/Edit Product Modal */}
       <Modal visible={showAddProductModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.addProductModalContainer}>
@@ -581,9 +693,13 @@ const ProdutosScreen = () => {
                 {isEditMode ? 'Editar Produto' : 'Cadastrar Novo Produto'}
               </Text>
 
-              <Text style={styles.inputLabel}>Imagens do Produto ({novoProduto.imagens.length})</Text>
+              <Text style={styles.inputLabel}>
+                Imagens do Produto ({novoProduto.imagens.length}/5)
+              </Text>
+              <Text style={styles.imageHint}>
+                💡 Imagens são otimizadas automaticamente
+              </Text>
               
-              {/* Grid de Imagens */}
               {novoProduto.imagens.length > 0 && (
                 <ScrollView horizontal style={styles.imagesGrid} showsHorizontalScrollIndicator={false}>
                   {novoProduto.imagens.map((img, index) => (
@@ -600,14 +716,16 @@ const ProdutosScreen = () => {
                 </ScrollView>
               )}
 
-              <TouchableOpacity
-                style={styles.addImageButton}
-                onPress={() => setShowImagePickerModal(true)}
-                activeOpacity={0.8}
-              >
-                <ImageIcon size={24} color="#007AFF" />
-                <Text style={styles.addImageButtonText}>Adicionar Imagem</Text>
-              </TouchableOpacity>
+              {novoProduto.imagens.length < 5 && (
+                <TouchableOpacity
+                  style={styles.addImageButton}
+                  onPress={() => setShowImagePickerModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <ImageIcon size={24} color="#007AFF" />
+                  <Text style={styles.addImageButtonText}>Adicionar Imagem</Text>
+                </TouchableOpacity>
+              )}
 
               <Text style={styles.inputLabel}>Nome do Produto *</Text>
               <TextInput
@@ -737,7 +855,6 @@ const ProdutosScreen = () => {
         </View>
       </Modal>
 
-      {/* Image Picker Modal */}
       <Modal visible={showImagePickerModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.imagePickerModal}>
@@ -781,6 +898,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     textAlign: 'center',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: 5,
+    opacity: 0.9,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -1094,6 +1218,12 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
     marginTop: 15,
+  },
+  imageHint: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginBottom: 10,
   },
   input: {
     backgroundColor: '#f8f8f8',
