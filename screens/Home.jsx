@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,10 +24,71 @@ import {
 
 const { width } = Dimensions.get('window');
 
+// Componente otimizado para métricas
+const MetricCard = React.memo(({ title, value, icon: Icon, color, growth, onPress }) => (
+  <TouchableOpacity 
+    style={[styles.metricCard, { borderLeftColor: color }]} 
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <View style={styles.metricHeader}>
+      <View style={[styles.metricIcon, { backgroundColor: color + '20' }]}>
+        <Icon size={24} color={color} />
+      </View>
+      {growth !== undefined && growth !== 0 && (
+        <View style={[styles.growthBadge, { backgroundColor: growth >= 0 ? '#4CAF50' : '#F44336' }]}>
+          {growth >= 0 ? <ArrowUp size={12} color="#fff" /> : <ArrowDown size={12} color="#fff" />}
+          <Text style={styles.growthText}>{Math.abs(growth).toFixed(0)}%</Text>
+        </View>
+      )}
+    </View>
+    <Text style={styles.metricValue}>{value}</Text>
+    <Text style={styles.metricTitle}>{title}</Text>
+  </TouchableOpacity>
+));
+
+// Componente otimizado para insights
+const InsightCard = React.memo(({ title, description, icon: Icon, color }) => (
+  <View style={styles.insightCard}>
+    <View style={[styles.insightIcon, { backgroundColor: color + '20' }]}>
+      <Icon size={20} color={color} />
+    </View>
+    <View style={styles.insightContent}>
+      <Text style={styles.insightTitle}>{title}</Text>
+      <Text style={styles.insightDescription}>{description}</Text>
+    </View>
+  </View>
+));
+
+// Componente otimizado para pedidos recentes
+const RecentOrderItem = React.memo(({ pedido, onPress }) => (
+  <TouchableOpacity 
+    style={styles.recentItem}
+    onPress={onPress}
+  >
+    <View style={styles.recentItemLeft}>
+      <View style={styles.recentItemIcon}>
+        <ShoppingCart size={20} color="#2196F3" />
+      </View>
+      <View>
+        <Text style={styles.recentItemTitle}>Pedido #{pedido.id}</Text>
+        <Text style={styles.recentItemClient}>{pedido.cliente}</Text>
+        <Text style={styles.recentItemDate}>
+          {new Date(pedido.data).toLocaleDateString('pt-BR')}
+        </Text>
+      </View>
+    </View>
+    <View style={styles.recentItemRight}>
+      <Text style={styles.recentItemTotal}>
+        R$ {(Number(pedido?.total) || 0).toFixed(2)}
+      </Text>
+    </View>
+  </TouchableOpacity>
+));
+
 const HomeScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState({
-    // Dados atuais
     totalClientes: 0,
     totalProdutos: 0,
     totalPedidos: 0,
@@ -35,14 +96,10 @@ const HomeScreen = ({ navigation }) => {
     faturamentoTotal: 0,
     faturamentoMesAtual: 0,
     ticketMedio: 0,
-    
-    // Comparações
     crescimentoClientes: 0,
     crescimentoProdutos: 0,
     crescimentoPedidos: 0,
     crescimentoFaturamento: 0,
-    
-    // Dados para gráficos
     vendasPorMes: {
       labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
       datasets: [{ data: [0] }]
@@ -51,11 +108,7 @@ const HomeScreen = ({ navigation }) => {
       labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
       datasets: [{ data: [0] }]
     },
-    topProdutos: [],
-    topClientes: [],
     pedidosRecentes: [],
-    
-    // Análises
     produtoMaisVendido: null,
     clienteMaisCompras: null,
     metodoPagamentoMaisUsado: null,
@@ -73,324 +126,218 @@ const HomeScreen = ({ navigation }) => {
 
   const loadDashboardData = async () => {
     try {
-      const clientes = await AsyncStorage.getItem('clientes');
-      const produtos = await AsyncStorage.getItem('produtos');
-      const pedidos = await AsyncStorage.getItem('pedidos');
-      const industrias = await AsyncStorage.getItem('industrias');
+      // Carregar todos os dados de uma vez
+      const [clientes, produtos, pedidos, industrias] = await Promise.all([
+        AsyncStorage.getItem('clientes'),
+        AsyncStorage.getItem('produtos'),
+        AsyncStorage.getItem('pedidos'),
+        AsyncStorage.getItem('industrias'),
+      ]);
 
-      const clientesData = clientes ? JSON.parse(clientes) : [];
-      const produtosData = produtos ? JSON.parse(produtos) : [];
-      const pedidosData = pedidos ? JSON.parse(pedidos) : [];
-      const industriasData = industrias ? JSON.parse(industrias) : [];
+      const clientesArray = clientes ? JSON.parse(clientes) : [];
+      const produtosArray = produtos ? JSON.parse(produtos) : [];
+      const pedidosArray = pedidos ? JSON.parse(pedidos) : [];
+      const industriasArray = industrias ? JSON.parse(industrias) : [];
 
-      // Garantir que são arrays
-      const clientesArray = Array.isArray(clientesData) ? clientesData : [];
-      const produtosArray = Array.isArray(produtosData) ? produtosData : [];
-      const pedidosArray = Array.isArray(pedidosData) ? pedidosData : [];
-      const industriasArray = Array.isArray(industriasData) ? industriasData : [];
+      // Calcular tudo de uma vez para evitar múltiplas iterações
+      const hoje = new Date();
+      const mesAtual = hoje.getMonth();
+      const anoAtual = hoje.getFullYear();
+      const mesAnterior = mesAtual === 0 ? 11 : mesAtual - 1;
+      const anoMesAnterior = mesAtual === 0 ? anoAtual - 1 : anoAtual;
 
-      // Calcular métricas
-      const metricas = calcularMetricas(clientesArray, produtosArray, pedidosArray);
-      const comparacoes = calcularComparacoes(clientesArray, produtosArray, pedidosArray);
-      const graficos = prepararDadosGraficos(pedidosArray);
-      const analises = calcularAnalises(pedidosArray, produtosArray, clientesArray);
+      // Usar um único loop para calcular várias métricas
+      let faturamentoTotal = 0;
+      let faturamentoMesAtual = 0;
+      let pedidosMesAtualCount = 0;
+      let pedidosMesAnteriorCount = 0;
+      let faturamentoMesAnterior = 0;
+      const produtosVendidos = {};
+      const comprasPorCliente = {};
+      const metodosPagamento = {};
+      const pedidosRecentes = [];
+
+      // Loop único para processar todos os pedidos
+      pedidosArray.forEach(pedido => {
+        const total = Number(pedido?.total) || 0;
+        faturamentoTotal += total;
+
+        // Data do pedido
+        let dataPedido;
+        try {
+          dataPedido = new Date(pedido.data);
+        } catch (e) {
+          return;
+        }
+
+        const mesPedido = dataPedido.getMonth();
+        const anoPedido = dataPedido.getFullYear();
+
+        // Mês atual
+        if (mesPedido === mesAtual && anoPedido === anoAtual) {
+          faturamentoMesAtual += total;
+          pedidosMesAtualCount++;
+        }
+
+        // Mês anterior
+        if (mesPedido === mesAnterior && anoPedido === anoMesAnterior) {
+          faturamentoMesAnterior += total;
+          pedidosMesAnteriorCount++;
+        }
+
+        // Produtos mais vendidos
+        if (Array.isArray(pedido.produtos)) {
+          pedido.produtos.forEach(produto => {
+            if (produto?.nome) {
+              if (!produtosVendidos[produto.nome]) {
+                produtosVendidos[produto.nome] = { nome: produto.nome, quantidade: 0, valor: 0 };
+              }
+              produtosVendidos[produto.nome].quantidade += Number(produto?.quantidade) || 0;
+              produtosVendidos[produto.nome].valor += (Number(produto?.preco) * Number(produto?.quantidade)) || 0;
+            }
+          });
+        }
+
+        // Clientes com mais compras
+        if (pedido.cliente) {
+          if (!comprasPorCliente[pedido.cliente]) {
+            comprasPorCliente[pedido.cliente] = { nome: pedido.cliente, quantidade: 0, valor: 0 };
+          }
+          comprasPorCliente[pedido.cliente].quantidade++;
+          comprasPorCliente[pedido.cliente].valor += total;
+        }
+
+        // Métodos de pagamento
+        if (pedido.metodoPagamento) {
+          metodosPagamento[pedido.metodoPagamento] = (metodosPagamento[pedido.metodoPagamento] || 0) + 1;
+        }
+
+        // Pedidos recentes (apenas os 5 primeiros)
+        if (pedidosRecentes.length < 5) {
+          pedidosRecentes.push(pedido);
+        }
+      });
+
+      // Ordenar pedidos recentes uma única vez
+      pedidosRecentes.sort((a, b) => new Date(b.data) - new Date(a.data));
+
+      const ticketMedio = pedidosArray.length > 0 ? faturamentoTotal / pedidosArray.length : 0;
+
+      // Calcular crescimentos de clientes e produtos (apenas se necessário)
+      const clientesMesAtualCount = clientesArray.filter(c => {
+        try {
+          const data = new Date(c.dataCadastro);
+          return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      const clientesMesAnteriorCount = clientesArray.filter(c => {
+        try {
+          const data = new Date(c.dataCadastro);
+          return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      const produtosMesAtualCount = produtosArray.filter(p => {
+        try {
+          const data = new Date(p.dataCadastro);
+          return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      const produtosMesAnteriorCount = produtosArray.filter(p => {
+        try {
+          const data = new Date(p.dataCadastro);
+          return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      // Calcular percentuais
+      const calcularPercentual = (atual, anterior) => {
+        if (anterior === 0) return atual > 0 ? 100 : 0;
+        return ((atual - anterior) / anterior) * 100;
+      };
+
+      // Preparar dados dos gráficos
+      const mesesLabels = [];
+      const vendasPorMes = [];
+      const pedidosPorMesData = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const data = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+        const mes = data.getMonth();
+        const ano = data.getFullYear();
+        
+        const nomeMes = data.toLocaleDateString('pt-BR', { month: 'short' });
+        mesesLabels.push(nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1, 3));
+
+        let faturamentoMes = 0;
+        let pedidosCount = 0;
+
+        pedidosArray.forEach(p => {
+          try {
+            const dataPedido = new Date(p.data);
+            if (dataPedido.getMonth() === mes && dataPedido.getFullYear() === ano) {
+              faturamentoMes += Number(p?.total) || 0;
+              pedidosCount++;
+            }
+          } catch (e) {}
+        });
+
+        vendasPorMes.push(faturamentoMes);
+        pedidosPorMesData.push(pedidosCount);
+      }
+
+      // Top produtos, clientes e método de pagamento
+      const produtoMaisVendido = Object.values(produtosVendidos)
+        .sort((a, b) => b.quantidade - a.quantidade)[0] || null;
+
+      const clienteMaisCompras = Object.values(comprasPorCliente)
+        .sort((a, b) => b.valor - a.valor)[0] || null;
+
+      const metodoPagamentoMaisUsado = Object.entries(metodosPagamento)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
       setDashboardData({
         totalClientes: clientesArray.length,
         totalProdutos: produtosArray.length,
         totalPedidos: pedidosArray.length,
         totalIndustrias: industriasArray.length,
-        ...metricas,
-        ...comparacoes,
-        ...graficos,
-        ...analises,
+        faturamentoTotal,
+        faturamentoMesAtual,
+        ticketMedio,
+        crescimentoClientes: calcularPercentual(clientesMesAtualCount, clientesMesAnteriorCount),
+        crescimentoProdutos: calcularPercentual(produtosMesAtualCount, produtosMesAnteriorCount),
+        crescimentoPedidos: calcularPercentual(pedidosMesAtualCount, pedidosMesAnteriorCount),
+        crescimentoFaturamento: calcularPercentual(faturamentoMesAtual, faturamentoMesAnterior),
+        vendasPorMes: {
+          labels: mesesLabels,
+          datasets: [{ data: vendasPorMes.length > 0 ? vendasPorMes : [0] }]
+        },
+        pedidosPorMes: {
+          labels: mesesLabels,
+          datasets: [{ data: pedidosPorMesData.length > 0 ? pedidosPorMesData : [0] }]
+        },
+        pedidosRecentes,
+        produtoMaisVendido,
+        clienteMaisCompras,
+        metodoPagamentoMaisUsado,
       });
     } catch (error) {
       console.error('Erro ao carregar dados do dashboard:', error);
     }
   };
 
-  const calcularMetricas = (clientes, produtos, pedidos) => {
-    // Garantir que pedidos é um array
-    const pedidosArray = Array.isArray(pedidos) ? pedidos : [];
-    
-    if (pedidosArray.length === 0) {
-      return {
-        faturamentoTotal: 0,
-        faturamentoMesAtual: 0,
-        ticketMedio: 0,
-      };
-    }
-
-    const faturamentoTotal = pedidosArray.reduce((total, p) => {
-      return total + (Number(p?.total) || 0);
-    }, 0);
-    
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth();
-    const anoAtual = hoje.getFullYear();
-    
-    const pedidosMesAtual = pedidosArray.filter(p => {
-      if (!p?.data) return false;
-      try {
-        const dataPedido = new Date(p.data);
-        return dataPedido.getMonth() === mesAtual && dataPedido.getFullYear() === anoAtual;
-      } catch (e) {
-        return false;
-      }
-    });
-    
-    const faturamentoMesAtual = pedidosMesAtual.reduce((total, p) => {
-      return total + (Number(p?.total) || 0);
-    }, 0);
-    
-    const ticketMedio = pedidosArray.length > 0 ? faturamentoTotal / pedidosArray.length : 0;
-
-    return {
-      faturamentoTotal,
-      faturamentoMesAtual,
-      ticketMedio,
-    };
-  };
-
-  const calcularComparacoes = (clientes, produtos, pedidos) => {
-    const clientesArray = Array.isArray(clientes) ? clientes : [];
-    const produtosArray = Array.isArray(produtos) ? produtos : [];
-    const pedidosArray = Array.isArray(pedidos) ? pedidos : [];
-
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth();
-    const anoAtual = hoje.getFullYear();
-    
-    // Mês anterior
-    const mesAnterior = mesAtual === 0 ? 11 : mesAtual - 1;
-    const anoMesAnterior = mesAtual === 0 ? anoAtual - 1 : anoAtual;
-
-    // Clientes novos este mês vs mês anterior
-    const clientesMesAtual = clientesArray.filter(c => {
-      if (!c?.dataCadastro) return false;
-      try {
-        const data = new Date(c.dataCadastro);
-        return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    const clientesMesAnterior = clientesArray.filter(c => {
-      if (!c?.dataCadastro) return false;
-      try {
-        const data = new Date(c.dataCadastro);
-        return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    // Produtos cadastrados
-    const produtosMesAtual = produtosArray.filter(p => {
-      if (!p?.dataCadastro) return false;
-      try {
-        const data = new Date(p.dataCadastro);
-        return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    const produtosMesAnterior = produtosArray.filter(p => {
-      if (!p?.dataCadastro) return false;
-      try {
-        const data = new Date(p.dataCadastro);
-        return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    // Pedidos
-    const pedidosMesAtual = pedidosArray.filter(p => {
-      if (!p?.data) return false;
-      try {
-        const data = new Date(p.data);
-        return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    const pedidosMesAnterior = pedidosArray.filter(p => {
-      if (!p?.data) return false;
-      try {
-        const data = new Date(p.data);
-        return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
-      } catch (e) {
-        return false;
-      }
-    }).length;
-
-    // Faturamento
-    const pedidosMesAtualArray = pedidosArray.filter(p => {
-      if (!p?.data) return false;
-      try {
-        const data = new Date(p.data);
-        return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
-      } catch (e) {
-        return false;
-      }
-    });
-
-    const faturamentoMesAtual = pedidosMesAtualArray.reduce((total, p) => {
-      return total + (Number(p?.total) || 0);
-    }, 0);
-
-    const pedidosMesAnteriorArray = pedidosArray.filter(p => {
-      if (!p?.data) return false;
-      try {
-        const data = new Date(p.data);
-        return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
-      } catch (e) {
-        return false;
-      }
-    });
-
-    const faturamentoMesAnterior = pedidosMesAnteriorArray.reduce((total, p) => {
-      return total + (Number(p?.total) || 0);
-    }, 0);
-
-    return {
-      crescimentoClientes: calcularPercentual(clientesMesAtual, clientesMesAnterior),
-      crescimentoProdutos: calcularPercentual(produtosMesAtual, produtosMesAnterior),
-      crescimentoPedidos: calcularPercentual(pedidosMesAtual, pedidosMesAnterior),
-      crescimentoFaturamento: calcularPercentual(faturamentoMesAtual, faturamentoMesAnterior),
-    };
-  };
-
-  const calcularPercentual = (atual, anterior) => {
-    if (anterior === 0) return atual > 0 ? 100 : 0;
-    return ((atual - anterior) / anterior) * 100;
-  };
-
-  const prepararDadosGraficos = (pedidos) => {
-    const pedidosArray = Array.isArray(pedidos) ? pedidos : [];
-
-    const hoje = new Date();
-    const mesesLabels = [];
-    const vendasPorMes = [];
-    const pedidosPorMes = [];
-
-    // Últimos 6 meses
-    for (let i = 5; i >= 0; i--) {
-      const data = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-      const mes = data.getMonth();
-      const ano = data.getFullYear();
-      
-      const nomeMes = data.toLocaleDateString('pt-BR', { month: 'short' });
-      mesesLabels.push(nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1, 3));
-
-      const pedidosDoMes = pedidosArray.filter(p => {
-        if (!p?.data) return false;
-        try {
-          const dataPedido = new Date(p.data);
-          return dataPedido.getMonth() === mes && dataPedido.getFullYear() === ano;
-        } catch (e) {
-          return false;
-        }
-      });
-
-      const faturamentoMes = pedidosDoMes.reduce((total, p) => {
-        return total + (Number(p?.total) || 0);
-      }, 0);
-      
-      vendasPorMes.push(faturamentoMes);
-      pedidosPorMes.push(pedidosDoMes.length);
-    }
-
-    // Pedidos recentes
-    const pedidosRecentes = pedidosArray
-      .filter(p => p?.data)
-      .sort((a, b) => {
-        try {
-          return new Date(b.data) - new Date(a.data);
-        } catch (e) {
-          return 0;
-        }
-      })
-      .slice(0, 5);
-
-    return {
-      vendasPorMes: {
-        labels: mesesLabels,
-        datasets: [{ data: vendasPorMes.length > 0 ? vendasPorMes : [0] }]
-      },
-      pedidosPorMes: {
-        labels: mesesLabels,
-        datasets: [{ data: pedidosPorMes.length > 0 ? pedidosPorMes : [0] }]
-      },
-      pedidosRecentes,
-    };
-  };
-
-  const calcularAnalises = (pedidos, produtos, clientes) => {
-    const pedidosArray = Array.isArray(pedidos) ? pedidos : [];
-    const produtosArray = Array.isArray(produtos) ? produtos : [];
-    const clientesArray = Array.isArray(clientes) ? clientes : [];
-
-    // Produto mais vendido
-    const produtosVendidos = {};
-    pedidosArray.forEach(pedido => {
-      if (!pedido?.produtos || !Array.isArray(pedido.produtos)) return;
-      
-      pedido.produtos.forEach(produto => {
-        if (!produto?.nome) return;
-        
-        const key = produto.nome;
-        if (!produtosVendidos[key]) {
-          produtosVendidos[key] = { nome: produto.nome, quantidade: 0, valor: 0 };
-        }
-        produtosVendidos[key].quantidade += Number(produto?.quantidade) || 0;
-        produtosVendidos[key].valor += (Number(produto?.preco) * Number(produto?.quantidade)) || 0;
-      });
-    });
-
-    const produtoMaisVendido = Object.values(produtosVendidos)
-      .sort((a, b) => b.quantidade - a.quantidade)[0] || null;
-
-    // Cliente com mais compras
-    const comprasPorCliente = {};
-    pedidosArray.forEach(pedido => {
-      if (!pedido?.cliente) return;
-      
-      if (!comprasPorCliente[pedido.cliente]) {
-        comprasPorCliente[pedido.cliente] = { nome: pedido.cliente, quantidade: 0, valor: 0 };
-      }
-      comprasPorCliente[pedido.cliente].quantidade++;
-      comprasPorCliente[pedido.cliente].valor += Number(pedido?.total) || 0;
-    });
-
-    const clienteMaisCompras = Object.values(comprasPorCliente)
-      .sort((a, b) => b.valor - a.valor)[0] || null;
-
-    // Método de pagamento mais usado
-    const metodosPagamento = {};
-    pedidosArray.forEach(pedido => {
-      if (!pedido?.metodoPagamento) return;
-      
-      const metodo = pedido.metodoPagamento;
-      metodosPagamento[metodo] = (metodosPagamento[metodo] || 0) + 1;
-    });
-
-    const metodoPagamentoMaisUsado = Object.entries(metodosPagamento)
-      .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-
-    return {
-      produtoMaisVendido,
-      clienteMaisCompras,
-      metodoPagamentoMaisUsado,
-    };
-  };
-
-  const chartConfig = {
+  // Configuração de gráficos memoizada
+  const chartConfig = useMemo(() => ({
     backgroundColor: '#fff',
     backgroundGradientFrom: '#fff',
     backgroundGradientTo: '#fff',
@@ -399,40 +346,21 @@ const HomeScreen = ({ navigation }) => {
     labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
     style: { borderRadius: 16 },
     propsForLabels: { fontSize: 12 },
-  };
+  }), []);
 
-  const MetricCard = ({ title, value, icon: Icon, color, growth, onPress }) => (
-    <TouchableOpacity 
-      style={[styles.metricCard, { borderLeftColor: color }]} 
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.metricHeader}>
-        <View style={[styles.metricIcon, { backgroundColor: color + '20' }]}>
-          <Icon size={24} color={color} />
-        </View>
-        {growth !== undefined && growth !== 0 && (
-          <View style={[styles.growthBadge, { backgroundColor: growth >= 0 ? '#4CAF50' : '#F44336' }]}>
-            {growth >= 0 ? <ArrowUp size={12} color="#fff" /> : <ArrowDown size={12} color="#fff" />}
-            <Text style={styles.growthText}>{Math.abs(growth).toFixed(0)}%</Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricTitle}>{title}</Text>
-    </TouchableOpacity>
-  );
+  const barChartConfig = useMemo(() => ({
+    ...chartConfig,
+    color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
+  }), [chartConfig]);
 
-  const InsightCard = ({ title, description, icon: Icon, color }) => (
-    <View style={styles.insightCard}>
-      <View style={[styles.insightIcon, { backgroundColor: color + '20' }]}>
-        <Icon size={20} color={color} />
-      </View>
-      <View style={styles.insightContent}>
-        <Text style={styles.insightTitle}>{title}</Text>
-        <Text style={styles.insightDescription}>{description}</Text>
-      </View>
-    </View>
+  // Data formatada memoizada
+  const formattedDate = useMemo(() => 
+    new Date().toLocaleDateString('pt-BR', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }), []
   );
 
   return (
@@ -447,14 +375,7 @@ const HomeScreen = ({ navigation }) => {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Dashboard</Text>
-          <Text style={styles.headerSubtitle}>
-            {new Date().toLocaleDateString('pt-BR', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
+          <Text style={styles.headerSubtitle}>{formattedDate}</Text>
         </View>
       </View>
 
@@ -566,10 +487,7 @@ const HomeScreen = ({ navigation }) => {
             data={dashboardData.pedidosPorMes}
             width={width - 60}
             height={220}
-            chartConfig={{
-              ...chartConfig,
-              color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
-            }}
+            chartConfig={barChartConfig}
             style={styles.chart}
             fromZero={true}
           />
@@ -619,29 +537,11 @@ const HomeScreen = ({ navigation }) => {
         
         {dashboardData.pedidosRecentes.length > 0 ? (
           dashboardData.pedidosRecentes.map((pedido, index) => (
-            <TouchableOpacity 
-              key={index} 
-              style={styles.recentItem}
+            <RecentOrderItem
+              key={pedido.id || index}
+              pedido={pedido}
               onPress={() => navigation.navigate('Pedidos')}
-            >
-              <View style={styles.recentItemLeft}>
-                <View style={styles.recentItemIcon}>
-                  <ShoppingCart size={20} color="#2196F3" />
-                </View>
-                <View>
-                  <Text style={styles.recentItemTitle}>Pedido #{pedido.id}</Text>
-                  <Text style={styles.recentItemClient}>{pedido.cliente}</Text>
-                  <Text style={styles.recentItemDate}>
-                    {new Date(pedido.data).toLocaleDateString('pt-BR')}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.recentItemRight}>
-                <Text style={styles.recentItemTotal}>
-                  R$ {(Number(pedido?.total) || 0).toFixed(2)}
-                </Text>
-              </View>
-            </TouchableOpacity>
+            />
           ))
         ) : (
           <View style={styles.emptyState}>
