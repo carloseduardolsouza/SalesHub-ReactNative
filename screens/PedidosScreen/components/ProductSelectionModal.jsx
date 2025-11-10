@@ -106,6 +106,18 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
     }
   };
 
+  // Função para pegar a primeira imagem do produto
+  const getProductImage = (produto) => {
+    if (produto.imagens && produto.imagens.length > 0) {
+      return produto.imagens[0];
+    }
+    // Fallback para produtos antigos que ainda usam 'imagem'
+    if (produto.imagem) {
+      return produto.imagem;
+    }
+    return 'https://via.placeholder.com/60x60/666666/white?text=Produto';
+  };
+
   return (
     <>
       <Modal visible={visible} transparent animationType="slide">
@@ -161,9 +173,7 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
               renderItem={({ item }) => (
                 <View style={styles.productItem}>
                   <Image
-                    source={{
-                      uri: item.imagem || 'https://via.placeholder.com/60x60/666666/white?text=Produto'
-                    }}
+                    source={{ uri: getProductImage(item) }}
                     style={styles.productImage}
                   />
                   <View style={styles.productInfo}>
@@ -217,9 +227,7 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
               <>
                 <View style={styles.productPreview}>
                   <Image
-                    source={{
-                      uri: selectedProduct.imagem || 'https://via.placeholder.com/80x80/666666/white?text=Produto'
-                    }}
+                    source={{ uri: getProductImage(selectedProduct) }}
                     style={styles.productPreviewImage}
                   />
                   <View>
@@ -385,6 +393,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 8,
     marginRight: 15,
+    backgroundColor: '#f0f0f0',
   },
   productInfo: {
     flex: 1,
@@ -480,6 +489,7 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 8,
     marginRight: 15,
+    backgroundColor: '#f0f0f0',
   },
   productPreviewName: {
     fontSize: 16,
