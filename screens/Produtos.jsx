@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   Alert,
   Modal,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,44 +17,9 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Picker } from '@react-native-picker/picker';
 import { Camera, Image as ImageIcon, Search, Plus, X, Edit, ChevronLeft, ChevronRight } from 'lucide-react-native';
 
-// Componente de Card de Produto Memoizado
-const ProductCard = React.memo(({ item, onPress }) => {
-  const imagemPrincipal = item.imagens?.[0] || 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem';
-  
-  return (
-    <TouchableOpacity
-      style={styles.productCard}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <View style={styles.cardImageContainer}>
-        <Image
-          source={{ uri: imagemPrincipal }}
-          style={styles.productImage}
-          resizeMode="cover"
-        />
-        {item.imagens?.length > 1 && (
-          <View style={styles.imageCountBadge}>
-            <Text style={styles.imageCountText}>+{item.imagens.length - 1}</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
-        <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
-        <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
-        {item.variacoes?.length > 0 && (
-          <Text style={styles.productVariations}>
-            {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-}, (prevProps, nextProps) => prevProps.item.id === nextProps.item.id);
-
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -64,7 +28,6 @@ const ProdutosScreen = () => {
   const [industrias, setIndustrias] = useState([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
 
   const [novoProduto, setNovoProduto] = useState({
     nome: '',
@@ -81,104 +44,154 @@ const ProdutosScreen = () => {
   });
 
   useEffect(() => {
-    loadData();
+    loadProdutos();
+    loadIndustrias();
   }, []);
 
-  // Carregar dados em paralelo
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [produtosData, industriasData] = await Promise.all([
-        AsyncStorage.getItem('produtos'),
-        AsyncStorage.getItem('industrias')
-      ]);
+  useEffect(() => {
+    filterProducts();
+  }, [searchText, produtos]);
 
+  const loadProdutos = async () => {
+    try {
+      const produtosData = await AsyncStorage.getItem('produtos');
+      console.log('📦 Carregando produtos do AsyncStorage:', produtosData ? 'Dados encontrados' : 'Nenhum dado');
+      
       if (produtosData) {
         const produtosParsed = JSON.parse(produtosData);
+        console.log('✅ Produtos carregados:', produtosParsed.length);
+        
         const produtosMigrados = produtosParsed.map(p => ({
           ...p,
           imagens: p.imagens || (p.imagem ? [p.imagem] : [])
         }));
+        
         setProdutos(produtosMigrados);
-      }
-
-      if (industriasData) {
-        setIndustrias(JSON.parse(industriasData));
+        setFilteredProducts(produtosMigrados);
+      } else {
+        console.log('⚠️ Nenhum produto encontrado, inicializando array vazio');
+        setProdutos([]);
+        setFilteredProducts([]);
       }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      Alert.alert('Erro', 'Erro ao carregar dados');
-    } finally {
-      setLoading(false);
+      console.error('❌ Erro ao carregar produtos:', error);
+      Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
+      setProdutos([]);
+      setFilteredProducts([]);
     }
-  }, []);
+  };
 
-  // Filtrar produtos de forma otimizada com useMemo
-  const filteredProducts = useMemo(() => {
-    if (!searchText.trim()) return produtos;
-    
-    const q = searchText.toLowerCase();
-    return produtos.filter(produto =>
-      produto.nome.toLowerCase().includes(q) ||
-      produto.industria.toLowerCase().includes(q)
-    );
-  }, [produtos, searchText]);
-
-  // Função otimizada para comprimir imagem (mais agressiva)
-  const compressImage = useCallback(async (uri) => {
+  const loadIndustrias = async () => {
     try {
-      // Redimensionar para 600px mantendo proporção + compressão 50%
+      const industriasData = await AsyncStorage.getItem('industrias');
+      if (industriasData) {
+        const industriasList = JSON.parse(industriasData);
+        setIndustrias(industriasList);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar indústrias:', error);
+    }
+  };
+
+  // Função para comprimir e redimensionar imagem
+  const compressImage = async (uri) => {
+    try {
+      console.log('🔄 Comprimindo imagem...');
+      
+      // Redimensionar para máximo 800px de largura mantendo proporção
       const manipulatedImage = await ImageManipulator.manipulateAsync(
         uri,
-        [{ resize: { width: 600 } }],
+        [{ resize: { width: 800 } }], // Reduz o tamanho
         { 
-          compress: 0.5, // Compressão de 50%
+          compress: 0.6, // Compressão de 60%
           format: ImageManipulator.SaveFormat.JPEG,
           base64: true
         }
       );
 
-      return `data:image/jpeg;base64,${manipulatedImage.base64}`;
+      const compressedBase64 = `data:image/jpeg;base64,${manipulatedImage.base64}`;
+      
+      // Calcular tamanho aproximado
+      const sizeKB = (compressedBase64.length * 0.75) / 1024;
+      console.log(`✅ Imagem comprimida: ~${sizeKB.toFixed(0)}KB`);
+      
+      return compressedBase64;
     } catch (error) {
-      console.error('Erro ao comprimir imagem:', error);
+      console.error('❌ Erro ao comprimir imagem:', error);
       throw error;
     }
-  }, []);
+  };
 
-  const saveProdutos = useCallback(async (produtosData) => {
+  const saveProdutos = async (produtosData) => {
     try {
-      // Verificar tamanho antes de salvar
-      const jsonString = JSON.stringify(produtosData);
-      const sizeKB = (jsonString.length * 2) / 1024;
+      console.log('💾 Salvando produtos no AsyncStorage:', produtosData.length, 'produtos');
       
-      if (sizeKB > 5000) {
-        throw new Error('Dados muito grandes!');
+      if (!Array.isArray(produtosData)) {
+        console.error('❌ Erro: produtosData não é um array!', produtosData);
+        throw new Error('Dados inválidos para salvar');
+      }
+
+      // Calcular tamanho total dos dados
+      const jsonString = JSON.stringify(produtosData);
+      const sizeKB = (jsonString.length * 2) / 1024; // UTF-16 = 2 bytes por char
+      console.log(`📊 Tamanho total dos dados: ~${sizeKB.toFixed(0)}KB`);
+      
+      if (sizeKB > 5000) { // Mais de 5MB
+        throw new Error('Dados muito grandes! Reduza o número de imagens ou produtos.');
       }
 
       await AsyncStorage.setItem('produtos', jsonString);
-      setProdutos(produtosData);
-    } catch (error) {
-      console.error('Erro ao salvar produtos:', error);
+      console.log('✅ Produtos salvos com sucesso no AsyncStorage');
       
-      if (error.message.includes('Row too big') || error.message.includes('muito grandes')) {
+      setProdutos(produtosData);
+      setFilteredProducts(produtosData);
+      
+      const verificacao = await AsyncStorage.getItem('produtos');
+      const verificacaoParsed = JSON.parse(verificacao);
+      console.log('🔍 Verificação: produtos salvos =', verificacaoParsed.length);
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar produtos:', error);
+      
+      if (error.message.includes('Row too big')) {
         Alert.alert(
-          'Limite Excedido',
-          'Você atingiu o limite de armazenamento. Reduza o número de imagens (máx. 2 por produto) ou delete produtos antigos.',
+          'Dados Muito Grandes',
+          'As imagens são muito pesadas. Por favor:\n\n' +
+          '• Use menos imagens por produto (máx. 3)\n' +
+          '• As imagens já são comprimidas automaticamente\n' +
+          '• Considere deletar produtos antigos se necessário',
           [{ text: 'OK' }]
         );
       } else {
-        Alert.alert('Erro', 'Erro ao salvar produto');
+        Alert.alert('Erro', 'Erro ao salvar dados dos produtos. Por favor, tente novamente.');
       }
       throw error;
     }
-  }, []);
+  };
 
-  const openCamera = useCallback(async () => {
+  const filterProducts = () => {
+    let filtered = produtos.slice();
+
+    if (searchText) {
+      const q = searchText.toLowerCase();
+      filtered = filtered.filter(produto =>
+        (produto.nome || '').toLowerCase().includes(q) ||
+        (produto.industria || '').toLowerCase().includes(q)
+      );
+    }
+
+    setFilteredProducts(filtered);
+  };
+
+  const openCamera = async () => {
     setShowImagePickerModal(false);
 
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
     if (!granted) {
-      Alert.alert('Permissão Negada', 'Precisamos da permissão para acessar a câmera.');
+      Alert.alert(
+        'Permissão Negada',
+        'Precisamos da sua permissão para acessar a câmera e tirar fotos.'
+      );
       return;
     }
 
@@ -186,29 +199,37 @@ const ProdutosScreen = () => {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.4,
+        quality: 0.5, // Reduzir qualidade inicial
       });
 
-      if (!result.canceled && result.assets?.[0]) {
-        const compressedImage = await compressImage(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        
+        // Comprimir a imagem
+        const compressedImage = await compressImage(asset.uri);
+        
         setNovoProduto(prev => ({ 
           ...prev, 
           imagens: [...prev.imagens, compressedImage] 
         }));
-        Alert.alert('✅', 'Imagem adicionada!');
+        
+        Alert.alert('✅', 'Imagem adicionada e otimizada!');
       }
     } catch (error) {
-      console.error('Erro ao usar câmera:', error);
-      Alert.alert('Erro', 'Erro ao usar câmera');
+      console.error('Erro ao acessar a câmera:', error);
+      Alert.alert('Erro', 'Ocorreu um erro ao tentar usar a câmera.');
     }
-  }, [compressImage]);
+  };
 
-  const openGallery = useCallback(async () => {
+  const openGallery = async () => {
     setShowImagePickerModal(false);
 
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) {
-      Alert.alert('Permissão Negada', 'Precisamos da permissão para acessar a galeria.');
+      Alert.alert(
+        'Permissão Negada',
+        'Precisamos da sua permissão para acessar a galeria de imagens.'
+      );
       return;
     }
 
@@ -216,24 +237,30 @@ const ProdutosScreen = () => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
-        quality: 0.4,
+        quality: 0.5, // Reduzir qualidade inicial
+        allowsMultipleSelection: false, // Uma imagem por vez
       });
 
-      if (!result.canceled && result.assets?.[0]) {
-        const compressedImage = await compressImage(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        
+        // Comprimir a imagem
+        const compressedImage = await compressImage(asset.uri);
+        
         setNovoProduto(prev => ({ 
           ...prev, 
           imagens: [...prev.imagens, compressedImage] 
         }));
-        Alert.alert('✅', 'Imagem adicionada!');
+        
+        Alert.alert('✅', 'Imagem adicionada e otimizada!');
       }
     } catch (error) {
-      console.error('Erro ao usar galeria:', error);
-      Alert.alert('Erro', 'Erro ao acessar galeria');
+      console.error('Erro ao acessar a galeria:', error);
+      Alert.alert('Erro', 'Ocorreu um erro ao tentar acessar a galeria.');
     }
-  }, [compressImage]);
+  };
 
-  const removeImage = useCallback((index) => {
+  const removeImage = (index) => {
     Alert.alert(
       'Remover Imagem',
       'Deseja remover esta imagem?',
@@ -249,32 +276,36 @@ const ProdutosScreen = () => {
         }
       ]
     );
-  }, []);
+  };
 
-  const formatMoney = useCallback((value) => {
+  const formatMoney = (value) => {
     if (!value) return '';
+
     const numericValue = String(value).replace(/[^\d]/g, '');
-    if (!numericValue) return '';
+    if (numericValue.length === 0) return '';
+
     if (numericValue.length > 15) return formatMoney(numericValue.slice(0, 15));
-    
+
     const numberValue = parseFloat(numericValue) / 100;
     return numberValue.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  }, []);
+  };
 
-  const handleMoneyInput = useCallback((value) => {
-    setNovoProduto(prev => ({ ...prev, preco: formatMoney(value) }));
-  }, [formatMoney]);
+  const handleMoneyInput = (value) => {
+    const formatted = formatMoney(value);
+    setNovoProduto(prev => ({ ...prev, preco: formatted }));
+  };
 
-  const parseMoneyValue = useCallback((formattedValue) => {
+  const parseMoneyValue = (formattedValue) => {
     if (!formattedValue) return 0;
-    const parsed = parseFloat(String(formattedValue).replace(/\./g, '').replace(',', '.'));
+    const onlyNumbers = String(formattedValue).replace(/\./g, '').replace(',', '.');
+    const parsed = parseFloat(onlyNumbers);
     return isNaN(parsed) ? 0 : parsed;
-  }, []);
+  };
 
-  const adicionarVariacao = useCallback(() => {
+  const adicionarVariacao = () => {
     if (!novaVariacao.valor.trim()) {
       Alert.alert('Erro', 'Digite um valor para a variação!');
       return;
@@ -295,16 +326,16 @@ const ProdutosScreen = () => {
     }));
 
     setNovaVariacao({ tipo: 'cor', valor: '' });
-  }, [novaVariacao, novoProduto.variacoes]);
+  };
 
-  const removerVariacao = useCallback((index) => {
-    setNovoProduto(prev => ({
-      ...prev,
-      variacoes: prev.variacoes.filter((_, i) => i !== index)
-    }));
-  }, []);
+  const removerVariacao = (index) => {
+    setNovoProduto(prev => {
+      const novas = prev.variacoes.filter((_, i) => i !== index);
+      return { ...prev, variacoes: novas };
+    });
+  };
 
-  const openEditMode = useCallback((produto) => {
+  const openEditMode = (produto) => {
     setIsEditMode(true);
     setNovoProduto({
       id: produto.id,
@@ -317,17 +348,16 @@ const ProdutosScreen = () => {
     });
     setShowProductModal(false);
     setShowAddProductModal(true);
-  }, []);
+  };
 
-  const salvarProduto = useCallback(async () => {
+  const salvarProduto = async () => {
     if (!novoProduto.nome.trim() || !novoProduto.preco || !novoProduto.industria) {
       Alert.alert('Erro', 'Nome, Preço e Indústria são obrigatórios!');
       return;
     }
 
-    // LIMITE REDUZIDO: máximo 2 imagens
-    if (novoProduto.imagens.length > 2) {
-      Alert.alert('Atenção', 'Máximo de 2 imagens por produto para melhor performance.');
+    if (novoProduto.imagens.length > 5) {
+      Alert.alert('Atenção', 'Máximo de 5 imagens por produto para evitar problemas de armazenamento.');
       return;
     }
 
@@ -339,13 +369,19 @@ const ProdutosScreen = () => {
     }
 
     try {
+      console.log('🔧 Iniciando salvamento de produto...');
+      console.log('📊 Produtos atuais no estado:', produtos.length);
+      console.log('🖼️ Número de imagens:', novoProduto.imagens.length);
+      
       if (isEditMode) {
+        console.log('✏️ Modo de edição: atualizando produto', novoProduto.id);
+        
         const produtosAtualizados = produtos.map(p =>
           p.id === novoProduto.id
             ? {
                 ...p,
                 nome: novoProduto.nome.trim(),
-                preco,
+                preco: preco,
                 imagens: novoProduto.imagens,
                 industria: novoProduto.industria,
                 descricao: novoProduto.descricao.trim(),
@@ -355,13 +391,16 @@ const ProdutosScreen = () => {
             : p
         );
         
+        console.log('📊 Total de produtos após atualização:', produtosAtualizados.length);
         await saveProdutos(produtosAtualizados);
-        Alert.alert('Sucesso', 'Produto atualizado!');
+        Alert.alert('Sucesso', 'Produto atualizado com sucesso!');
       } else {
+        console.log('➕ Modo de criação: adicionando novo produto');
+        
         const produto = {
           id: Date.now(),
           nome: novoProduto.nome.trim(),
-          preco,
+          preco: preco,
           imagens: novoProduto.imagens,
           industria: novoProduto.industria,
           descricao: novoProduto.descricao.trim(),
@@ -369,9 +408,18 @@ const ProdutosScreen = () => {
           dataCadastro: new Date().toISOString()
         };
 
-        const novosProdutos = [produto, ...produtos];
+        console.log('🆕 Novo produto criado:', produto.nome);
+        
+        const produtosAtuais = await AsyncStorage.getItem('produtos');
+        const listaProdutosAtuais = produtosAtuais ? JSON.parse(produtosAtuais) : [];
+        
+        console.log('📊 Produtos no AsyncStorage antes de adicionar:', listaProdutosAtuais.length);
+        
+        const novosProdutos = [produto, ...listaProdutosAtuais];
+        
+        console.log('📊 Total de produtos após adicionar novo:', novosProdutos.length);
         await saveProdutos(novosProdutos);
-        Alert.alert('Sucesso', 'Produto cadastrado!');
+        Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
       }
 
       setNovoProduto({
@@ -385,12 +433,15 @@ const ProdutosScreen = () => {
       setIsEditMode(false);
       setShowAddProductModal(false);
       
+      await loadProdutos();
+      
     } catch (error) {
-      // Erro já tratado em saveProdutos
+      console.error('❌ Erro ao salvar produto:', error);
+      // O erro já é tratado dentro de saveProdutos
     }
-  }, [novoProduto, produtos, isEditMode, parseMoneyValue, saveProdutos]);
+  };
 
-  const deleteProduto = useCallback((produtoId) => {
+  const deleteProduto = (produtoId) => {
     Alert.alert(
       'Excluir Produto',
       'Tem certeza que deseja excluir este produto?',
@@ -401,55 +452,79 @@ const ProdutosScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('🗑️ Excluindo produto:', produtoId);
               const produtosAtualizados = produtos.filter(p => p.id !== produtoId);
+              console.log('📊 Produtos restantes:', produtosAtualizados.length);
+              
               await saveProdutos(produtosAtualizados);
               setShowProductModal(false);
-              Alert.alert('Sucesso', 'Produto excluído!');
+              Alert.alert('Sucesso', 'Produto excluído com sucesso!');
             } catch (error) {
+              console.error('❌ Erro ao excluir produto:', error);
               Alert.alert('Erro', 'Erro ao excluir produto');
             }
           }
         }
       ]
     );
-  }, [produtos, saveProdutos]);
+  };
 
-  const nextImage = useCallback(() => {
-    if (selectedProduct?.imagens) {
-      setCurrentImageIndex((prev) => (prev + 1) % selectedProduct.imagens.length);
+  const nextImage = () => {
+    if (selectedProduct && selectedProduct.imagens) {
+      setCurrentImageIndex((prev) => 
+        (prev + 1) % selectedProduct.imagens.length
+      );
     }
-  }, [selectedProduct]);
+  };
 
-  const prevImage = useCallback(() => {
-    if (selectedProduct?.imagens) {
+  const prevImage = () => {
+    if (selectedProduct && selectedProduct.imagens) {
       setCurrentImageIndex((prev) => 
         prev === 0 ? selectedProduct.imagens.length - 1 : prev - 1
       );
     }
-  }, [selectedProduct]);
+  };
 
-  const renderProductCard = useCallback(({ item }) => (
-    <ProductCard
-      item={item}
-      onPress={() => {
-        setSelectedProduct(item);
-        setCurrentImageIndex(0);
-        setShowProductModal(true);
-      }}
-    />
-  ), []);
-
-  // Otimização de keyExtractor
-  const keyExtractor = useCallback((item) => String(item.id), []);
-
-  if (loading) {
+  const renderProductCard = ({ item }) => {
+    const imagemPrincipal = item.imagens && item.imagens.length > 0 
+      ? item.imagens[0] 
+      : 'https://via.placeholder.com/150x150/666666/white?text=Sem+Imagem';
+    
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Carregando produtos...</Text>
-      </View>
+      <TouchableOpacity
+        style={styles.productCard}
+        onPress={() => {
+          setSelectedProduct(item);
+          setCurrentImageIndex(0);
+          setShowProductModal(true);
+        }}
+        activeOpacity={0.8}
+      >
+        <View style={styles.cardImageContainer}>
+          <Image
+            source={{ uri: imagemPrincipal }}
+            style={styles.productImage}
+            resizeMode="cover"
+          />
+          {item.imagens && item.imagens.length > 1 && (
+            <View style={styles.imageCountBadge}>
+              <Text style={styles.imageCountText}>+{item.imagens.length - 1}</Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={2}>{item.nome}</Text>
+          <Text style={styles.productCompany} numberOfLines={1}>{item.industria}</Text>
+          <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
+          {item.variacoes && item.variacoes.length > 0 && (
+            <Text style={styles.productVariations}>
+              {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
     );
-  }
+  };
 
   return (
     <View style={styles.container}>
@@ -483,14 +558,10 @@ const ProdutosScreen = () => {
       <FlatList
         data={filteredProducts}
         renderItem={renderProductCard}
-        keyExtractor={keyExtractor}
+        keyExtractor={item => String(item.id)}
         numColumns={2}
         contentContainerStyle={styles.productsList}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={6}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>Nenhum produto encontrado</Text>
@@ -498,14 +569,13 @@ const ProdutosScreen = () => {
         }
       />
 
-      {/* Modal de Detalhes */}
       <Modal visible={showProductModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.productModalContainer}>
             <ScrollView>
               {selectedProduct && (
                 <>
-                  {selectedProduct.imagens?.length > 0 ? (
+                  {selectedProduct.imagens && selectedProduct.imagens.length > 0 ? (
                     <View style={styles.imageGallery}>
                       <Image
                         source={{ uri: selectedProduct.imagens[currentImageIndex] }}
@@ -536,6 +606,23 @@ const ProdutosScreen = () => {
                     />
                   )}
 
+                  {selectedProduct.imagens && selectedProduct.imagens.length > 1 && (
+                    <ScrollView horizontal style={styles.thumbnailContainer} showsHorizontalScrollIndicator={false}>
+                      {selectedProduct.imagens.map((img, index) => (
+                        <TouchableOpacity 
+                          key={index} 
+                          onPress={() => setCurrentImageIndex(index)}
+                          style={[
+                            styles.thumbnail,
+                            currentImageIndex === index && styles.thumbnailActive
+                          ]}
+                        >
+                          <Image source={{ uri: img }} style={styles.thumbnailImage} resizeMode="cover" />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+
                   <Text style={styles.productDetailName}>{selectedProduct.nome}</Text>
                   <Text style={styles.productDetailCompany}>{selectedProduct.industria}</Text>
 
@@ -551,7 +638,7 @@ const ProdutosScreen = () => {
                     </View>
                   ) : null}
 
-                  {selectedProduct.variacoes?.length > 0 && (
+                  {selectedProduct.variacoes && selectedProduct.variacoes.length > 0 && (
                     <View style={styles.variationsContainer}>
                       <Text style={styles.variationsLabel}>Variações:</Text>
                       {selectedProduct.variacoes.map((variacao, index) => (
@@ -564,6 +651,10 @@ const ProdutosScreen = () => {
                       ))}
                     </View>
                   )}
+
+                  <Text style={styles.dateText}>
+                    Cadastrado em: {new Date(selectedProduct.dataCadastro).toLocaleDateString('pt-BR')}
+                  </Text>
 
                   <View style={styles.modalButtonsRow}>
                     <TouchableOpacity
@@ -594,7 +685,6 @@ const ProdutosScreen = () => {
         </View>
       </Modal>
 
-      {/* Modal de Adicionar/Editar */}
       <Modal visible={showAddProductModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.addProductModalContainer}>
@@ -604,10 +694,10 @@ const ProdutosScreen = () => {
               </Text>
 
               <Text style={styles.inputLabel}>
-                Imagens do Produto ({novoProduto.imagens.length}/2)
+                Imagens do Produto ({novoProduto.imagens.length}/5)
               </Text>
               <Text style={styles.imageHint}>
-                💡 Máximo 2 imagens (otimizadas automaticamente)
+                💡 Imagens são otimizadas automaticamente
               </Text>
               
               {novoProduto.imagens.length > 0 && (
@@ -626,10 +716,11 @@ const ProdutosScreen = () => {
                 </ScrollView>
               )}
 
-              {novoProduto.imagens.length < 2 && (
+              {novoProduto.imagens.length < 5 && (
                 <TouchableOpacity
                   style={styles.addImageButton}
                   onPress={() => setShowImagePickerModal(true)}
+                  activeOpacity={0.8}
                 >
                   <ImageIcon size={24} color="#007AFF" />
                   <Text style={styles.addImageButtonText}>Adicionar Imagem</Text>
@@ -701,7 +792,7 @@ const ProdutosScreen = () => {
 
                 <TextInput
                   style={[styles.input, styles.variationInput]}
-                  placeholder={novaVariacao.tipo === 'cor' ? 'Ex: Azul' : 'Ex: M'}
+                  placeholder={novaVariacao.tipo === 'cor' ? 'Ex: Azul, Vermelho' : 'Ex: P, M, G'}
                   value={novaVariacao.valor}
                   onChangeText={(text) => setNovaVariacao(prev => ({ ...prev, valor: text }))}
                   placeholderTextColor="#999"
@@ -714,7 +805,7 @@ const ProdutosScreen = () => {
 
               {novoProduto.variacoes.length > 0 && (
                 <View style={styles.addedVariationsContainer}>
-                  <Text style={styles.addedVariationsTitle}>Variações:</Text>
+                  <Text style={styles.addedVariationsTitle}>Variações Adicionadas:</Text>
                   {novoProduto.variacoes.map((variacao, index) => (
                     <View key={index} style={styles.addedVariationItem}>
                       <Text style={styles.addedVariationText}>
@@ -750,7 +841,10 @@ const ProdutosScreen = () => {
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.saveButton} onPress={salvarProduto}>
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={salvarProduto}
+                >
                   <Text style={styles.saveButtonText}>
                     {isEditMode ? 'Atualizar' : 'Salvar'}
                   </Text>
@@ -761,7 +855,6 @@ const ProdutosScreen = () => {
         </View>
       </Modal>
 
-      {/* Modal de Seleção de Imagem */}
       <Modal visible={showImagePickerModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.imagePickerModal}>
@@ -790,20 +883,10 @@ const ProdutosScreen = () => {
   );
 };
 
-// Estilos (mesmos do original, sem mudanças)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
   },
   header: {
     backgroundColor: '#007AFF',
@@ -833,6 +916,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderWidth: 1,
     borderColor: '#ddd',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   searchIcon: {
     marginRight: 10,
@@ -852,6 +940,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   addButtonText: {
     color: '#fff',
@@ -869,11 +962,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     margin: 8,
     padding: 10,
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
     minWidth: 0,
   },
   cardImageContainer: {
@@ -999,6 +1092,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  thumbnailContainer: {
+    marginVertical: 10,
+    maxHeight: 70,
+  },
+  thumbnail: {
+    marginRight: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  thumbnailActive: {
+    borderColor: '#007AFF',
+  },
+  thumbnailImage: {
+    width: 60,
+    height: 60,
+  },
   productDetailName: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -1079,6 +1190,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  dateText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginBottom: 20,
   },
   addProductModalContainer: {
     backgroundColor: '#fff',
@@ -1205,6 +1322,7 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 2,
   },
   addedVariationsContainer: {
     backgroundColor: '#f8f9fa',
@@ -1247,6 +1365,11 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     padding: 20,
     width: '80%',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   imagePickerOption: {
     flexDirection: 'row',
@@ -1271,6 +1394,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginRight: 8,
+    elevation: 2,
   },
   cancelButtonText: {
     textAlign: 'center',
@@ -1284,6 +1408,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginLeft: 8,
+    elevation: 3,
   },
   saveButtonText: {
     textAlign: 'center',
@@ -1300,6 +1425,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginRight: 8,
+    elevation: 3,
   },
   editButtonText: {
     textAlign: 'center',
@@ -1314,6 +1440,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginLeft: 8,
+    elevation: 3,
   },
   deleteButtonText: {
     textAlign: 'center',
@@ -1326,6 +1453,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginTop: 10,
+    elevation: 3,
   },
   closeButtonText: {
     textAlign: 'center',
