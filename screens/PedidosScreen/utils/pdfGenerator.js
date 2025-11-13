@@ -136,7 +136,7 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
                 width: 100px;
                 height: 100px;
                 object-fit: contain;
-                margin-left: 20px;
+                margin-right: 20px;
             }
             .company-name {
                 font-size: 24px;
@@ -263,6 +263,9 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
     </head>
     <body>
         <div class="header">
+            ${empresaSettings.empresaLogoUri ? `
+                <img src="${empresaSettings.empresaLogoUri}" alt="Logo da Empresa" class="company-logo" />
+            ` : ''}
             <div class="header-left">
                 <div class="company-name">${empresaSettings.empresaNome || "SUA EMPRESA LTDA"}</div>
                 <div class="company-info">
@@ -272,9 +275,6 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
                     <div>Endereço: ${empresaSettings.empresaEndereco || "Sua Rua, 123 - Sua Cidade - UF"}</div>
                 </div>
             </div>
-            ${empresaSettings.empresaLogoUri ? `
-                <img src="${empresaSettings.empresaLogoUri}" alt="Logo da Empresa" class="company-logo" />
-            ` : ''}
         </div>
 
         <div class="document-title">NOTA DE PEDIDO Nº ${pedido.id}</div>
@@ -388,12 +388,6 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
             <div>${pedido.observacoes}</div>
         </div>
         ` : ''}
-
-        <div class="footer">
-            <p>Este documento é uma nota de pedido e não possui valor fiscal.</p>
-            <p>Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
-            ${mostrarDescontos ? '<p><em>Nota gerada com descontos aplicados</em></p>' : '<p><em>Nota gerada sem exibição de descontos</em></p>'}
-        </div>
     </body>
     </html>
   `;

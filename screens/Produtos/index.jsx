@@ -20,6 +20,7 @@ import { ImageGallery } from './components/ImageGallery';
 import { ProductInfo } from './components/ProductInfo';
 import { ImagePickerComponent } from './components/ImagePicker';
 import { VariationManager } from './components/VariationManager';
+import { IndustryFilter } from './components/IndustryFilter';
 import { useProductForm } from './hooks/useProductForm';
 import { useImageHandler } from './hooks/useImageHandler';
 
@@ -27,6 +28,7 @@ const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchText, setSearchText] = useState('');
+  const [selectedIndustria, setSelectedIndustria] = useState(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -57,7 +59,7 @@ const ProdutosScreen = () => {
 
   useEffect(() => {
     filterProducts();
-  }, [searchText, produtos]);
+  }, [searchText, selectedIndustria, produtos]);
 
   const loadProdutos = async () => {
     try {
@@ -123,6 +125,13 @@ const ProdutosScreen = () => {
 
   const filterProducts = () => {
     let filtered = produtos.slice();
+    
+    // Filtro por indústria
+    if (selectedIndustria) {
+      filtered = filtered.filter(produto => produto.industria === selectedIndustria);
+    }
+    
+    // Filtro por texto de pesquisa
     if (searchText) {
       const q = searchText.toLowerCase();
       filtered = filtered.filter(produto =>
@@ -130,7 +139,21 @@ const ProdutosScreen = () => {
         (produto.industria || '').toLowerCase().includes(q)
       );
     }
+    
     setFilteredProducts(filtered);
+  };
+
+  const getProductCount = () => {
+    const byIndustry = {};
+    produtos.forEach(produto => {
+      const industria = produto.industria || 'Sem indústria';
+      byIndustry[industria] = (byIndustry[industria] || 0) + 1;
+    });
+    
+    return {
+      total: produtos.length,
+      byIndustry
+    };
   };
 
   const openEditMode = (produto) => {
@@ -282,10 +305,22 @@ const ProdutosScreen = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Produtos</Text>
-        <Text style={styles.headerSubtitle}>Total: {produtos.length} produtos</Text>
+        <Text style={styles.headerSubtitle}>
+          {selectedIndustria 
+            ? `${filteredProducts.length} produto${filteredProducts.length !== 1 ? 's' : ''} - ${selectedIndustria}`
+            : `Total: ${produtos.length} produto${produtos.length !== 1 ? 's' : ''}`
+          }
+        </Text>
       </View>
 
       <SearchBar value={searchText} onChangeText={setSearchText} />
+
+      <IndustryFilter
+        industrias={industrias}
+        selectedIndustria={selectedIndustria}
+        onSelectIndustria={setSelectedIndustria}
+        productCount={getProductCount()}
+      />
 
       <TouchableOpacity
         style={styles.addButton}
@@ -316,7 +351,22 @@ const ProdutosScreen = () => {
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>Nenhum produto encontrado</Text>
+            <Text style={styles.emptyStateText}>
+              {selectedIndustria || searchText 
+                ? 'Nenhum produto encontrado com os filtros aplicados' 
+                : 'Nenhum produto cadastrado'}
+            </Text>
+            {(selectedIndustria || searchText) && (
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={() => {
+                  setSearchText('');
+                  setSelectedIndustria(null);
+                }}
+              >
+                <Text style={styles.clearFiltersButtonText}>Limpar Filtros</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -508,8 +558,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#007AFF',
-    padding: 20,
-    paddingTop: 50,
+    padding: 10,
+    paddingTop: 20,
   },
   headerTitle: {
     fontSize: 24,
@@ -559,6 +609,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
     textAlign: 'center',
+    marginBottom: 15,
+  },
+  clearFiltersButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  clearFiltersButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   modalOverlay: {
     flex: 1,
