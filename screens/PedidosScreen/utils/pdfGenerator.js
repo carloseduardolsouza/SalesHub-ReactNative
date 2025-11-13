@@ -11,6 +11,7 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
     razaoSocial: '', 
     cnpj: '', 
     telefone: '', 
+    inscricaoEstadual: '',
     email: '',
     endereco: {}
   };
@@ -284,6 +285,7 @@ export const generateOrderHTML = (pedido, clientes, empresaSettings, mostrarDesc
                 <div class="info-line"><strong>Nome Fantasia:</strong> ${cliente.nomeFantasia}</div>
                 <div class="info-line"><strong>Razão Social:</strong> ${cliente.razaoSocial || 'N/A'}</div>
                 <div class="info-line"><strong>CNPJ:</strong> ${cliente.cnpj || 'N/A'}</div>
+                <div class="info-line"><strong>Inscrição Estadual:</strong> ${cliente.inscricaoEstadual || 'N/A'}</div>
                 <div class="info-line"><strong>Endereço:</strong> ${enderecoFormatado}</div>
                 <div class="info-line"><strong>Telefone:</strong> ${cliente.telefone || 'N/A'}</div>
                 <div class="info-line"><strong>Email:</strong> ${cliente.email || 'N/A'}</div>

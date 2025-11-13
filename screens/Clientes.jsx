@@ -20,10 +20,8 @@ const INITIAL_CLIENTE_STATE = {
   cnpj: '',
   nomeFantasia: '',
   razaoSocial: '',
-  cidade: '',
   inscricaoEstadual: '',
   nomeComprador: '',
-  estado: '',
   email: '',
   telefone: '',
   dataNascimento: new Date(),
@@ -156,6 +154,24 @@ const ClientesScreen = ({ navigation }) => {
     ].filter(Boolean);
     
     return partes.join(', ');
+  };
+
+  // Função para obter o valor do campo, tratando casos especiais
+  const getFieldValue = (item, fieldKey) => {
+    switch (fieldKey) {
+      case 'cidade':
+        return item.endereco?.cidade || '-';
+      case 'estado':
+        return item.endereco?.estado || '-';
+      case 'dataNascimento':
+        return item.dataNascimento instanceof Date 
+          ? item.dataNascimento.toLocaleDateString('pt-BR')
+          : '-';
+      case 'enderecoCompleto':
+        return getEnderecoCompleto(item);
+      default:
+        return item[fieldKey] || '-';
+    }
   };
   // --- Fim das Funções de formatação e validação ---
 
@@ -311,12 +327,7 @@ const ClientesScreen = ({ navigation }) => {
       {selectedFields.map(fieldKey => (
         <View key={fieldKey} style={styles.tableCell}>
           <Text style={styles.cellText} numberOfLines={2}>
-            {fieldKey === 'dataNascimento' && item[fieldKey] instanceof Date 
-              ? item[fieldKey].toLocaleDateString('pt-BR')
-              : fieldKey === 'enderecoCompleto'
-              ? getEnderecoCompleto(item)
-              : item[fieldKey] || '-'
-            }
+            {getFieldValue(item, fieldKey)}
           </Text>
         </View>
       ))}
