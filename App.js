@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HomeScreen from './screens/Home';
 import ClientesScreen from './screens/Clientes';
 import PedidosScreen from './screens/PedidosScreen/index';
-import ProdutosScreen from './screens/';
+import ProdutosScreen from './screens/Produtos/index';
 import ConfiguracaoScreen from './screens/Configuracao';
 import IndustriasScreen from './screens/Industrias';
 

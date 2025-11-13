@@ -14,14 +14,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { Camera, Image as ImageIcon, Plus, Edit } from 'lucide-react-native';
 
-import { ProductCard } from '../components/ProductCard';
-import { SearchBar } from '../components/SearchBar';
-import { ImageGallery } from '../components/ImageGallery';
-import { ProductInfo } from '../components/ProductInfo';
-import { ImagePickerComponent } from '../components/ImagePicker';
-import { VariationManager } from '../components/VariationManager';
-import { useProductForm } from '../hooks/useProductForm';
-import { useImageHandler } from '../hooks/useImageHandler';
+import { ProductCard } from './components/ProductCard';
+import { SearchBar } from './components/SearchBar';
+import { ImageGallery } from './components/ImageGallery';
+import { ProductInfo } from './components/ProductInfo';
+import { ImagePickerComponent } from './components/ImagePicker';
+import { VariationManager } from './components/VariationManager';
+import { useProductForm } from './hooks/useProductForm';
+import { useImageHandler } from './hooks/useImageHandler';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
