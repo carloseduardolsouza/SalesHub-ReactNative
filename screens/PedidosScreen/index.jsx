@@ -264,6 +264,37 @@ const PedidosScreen = () => {
     }
   };
 
+  const handleDeleteOrder = (order) => {
+    Alert.alert(
+      'Confirmar Exclusão',
+      `Tem certeza que deseja excluir o pedido #${order.id}?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => deleteOrder(order.id)
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const deleteOrder = async (orderId) => {
+    try {
+      const updatedPedidos = pedidos.filter(pedido => pedido.id !== orderId);
+      await savePedidos(updatedPedidos);
+      setShowOrderDetails(false);
+      Alert.alert('Sucesso', 'Pedido excluído com sucesso!');
+    } catch (error) {
+      console.error('Erro ao excluir pedido:', error);
+      Alert.alert('Erro', 'Não foi possível excluir o pedido. Tente novamente.');
+    }
+  };
+
   const handleSelectOrder = (order) => {
     setSelectedOrder(order);
     setShowOrderDetails(true);
@@ -324,6 +355,7 @@ const PedidosScreen = () => {
         clientes={clientes}
         onExportPDF={exportOrderToPDF}
         onEditOrder={handleEditOrder}
+        onDeleteOrder={handleDeleteOrder}
       />
     </View>
   );

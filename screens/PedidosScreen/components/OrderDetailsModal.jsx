@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { Download, Edit, FileText } from "lucide-react-native";
+import { Download, Edit, FileText, Trash2 } from "lucide-react-native";
 import { getStatusColor, getStatusText } from "../utils/statusHelpers";
 
 const metodoPagamentoOptions = [
@@ -25,6 +25,7 @@ const OrderDetailsModal = ({
   clientes,
   onExportPDF,
   onEditOrder,
+  onDeleteOrder,
 }) => {
   const [showExportOptions, setShowExportOptions] = useState(false);
 
@@ -37,16 +38,16 @@ const OrderDetailsModal = ({
       [
         {
           text: "Cancelar",
-          style: "cancel"
+          style: "cancel",
         },
         {
           text: "Com Descontos",
-          onPress: () => onExportPDF(order, clientes, true)
+          onPress: () => onExportPDF(order, clientes, true),
         },
         {
           text: "Sem Descontos",
-          onPress: () => onExportPDF(order, clientes, false)
-        }
+          onPress: () => onExportPDF(order, clientes, false),
+        },
       ],
       { cancelable: true }
     );
@@ -54,20 +55,21 @@ const OrderDetailsModal = ({
 
   const calcularValorProdutoComDesconto = (produto) => {
     const precoTotal = produto.preco * produto.quantidade;
-    
+
     if (!produto.desconto?.valor) {
       return precoTotal;
     }
-    
-    const valorDesconto = parseFloat(produto.desconto.valor.toString().replace(',', '.')) || 0;
+
+    const valorDesconto =
+      parseFloat(produto.desconto.valor.toString().replace(",", ".")) || 0;
     let desconto = 0;
-    
-    if (produto.desconto.tipo === 'percentual') {
+
+    if (produto.desconto.tipo === "percentual") {
       desconto = (precoTotal * valorDesconto) / 100;
     } else {
       desconto = valorDesconto;
     }
-    
+
     return Math.max(0, precoTotal - desconto);
   };
 
@@ -79,7 +81,7 @@ const OrderDetailsModal = ({
             <View style={styles.header}>
               <Text style={styles.modalTitle}>Pedido #{order.id}</Text>
             </View>
-            
+
             <View style={styles.actionButtons}>
               <TouchableOpacity
                 style={styles.editButton}
@@ -90,13 +92,21 @@ const OrderDetailsModal = ({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.exportButton}
-                onPress={handleExportWithOptions}
+                style={styles.deleteButton}
+                onPress={() => onDeleteOrder(order)}
               >
-                <Download size={20} color="#fff" />
-                <Text style={styles.exportButtonText}>Exportar PDF</Text>
+                <Trash2 size={20} color="#fff" />
+                <Text style={styles.deleteButtonText}>Excluir</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.exportButton}
+              onPress={handleExportWithOptions}
+            >
+              <Download size={20} color="#fff" />
+              <Text style={styles.exportButtonText}>Exportar PDF</Text>
+            </TouchableOpacity>
 
             <Text style={styles.detailLabel}>Cliente:</Text>
             <Text style={styles.detailValue}>{order.cliente}</Text>
@@ -130,13 +140,16 @@ const OrderDetailsModal = ({
             {order.produtos?.map((produto, index) => {
               const precoOriginal = produto.preco * produto.quantidade;
               const precoComDesconto = calcularValorProdutoComDesconto(produto);
-              
+
               return (
                 <View key={index} style={styles.produtoDetail}>
                   <Text style={styles.produtoDetailName}>{produto.nome}</Text>
                   {produto.variacaoSelecionada && (
                     <Text style={styles.produtoDetailVariation}>
-                      {produto.variacaoSelecionada.tipo === 'cor' ? 'Cor' : 'Tamanho'}: {produto.variacaoSelecionada.valor}
+                      {produto.variacaoSelecionada.tipo === "cor"
+                        ? "Cor"
+                        : "Tamanho"}
+                      : {produto.variacaoSelecionada.valor}
                     </Text>
                   )}
                   <Text style={styles.produtoDetailInfo}>
@@ -145,8 +158,9 @@ const OrderDetailsModal = ({
                   </Text>
                   {produto.desconto?.valor && (
                     <Text style={styles.produtoDetailDiscount}>
-                      Desconto individual: {produto.desconto.tipo === 'percentual' 
-                        ? `${produto.desconto.valor}%` 
+                      Desconto individual:{" "}
+                      {produto.desconto.tipo === "percentual"
+                        ? `${produto.desconto.valor}%`
                         : `R$ ${produto.desconto.valor}`}
                     </Text>
                   )}
@@ -248,6 +262,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   exportButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    marginLeft: 5,
+    fontSize: 14,
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f44336",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  deleteButtonText: {
     color: "#fff",
     fontWeight: "bold",
     marginLeft: 5,
