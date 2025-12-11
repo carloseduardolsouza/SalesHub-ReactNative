@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { memo, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,8 +8,7 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { Download, Edit, FileText, Trash2 } from "lucide-react-native";
-import { getStatusColor, getStatusText } from "../utils/statusHelpers";
+import { Download, Edit, Trash2 } from "lucide-react-native";
 
 const metodoPagamentoOptions = [
   { value: "dinheiro", label: "Dinheiro" },
@@ -17,6 +16,54 @@ const metodoPagamentoOptions = [
   { value: "pix", label: "Pix" },
   { value: "boleto", label: "Boleto" },
 ];
+
+// Componente de produto memoizado
+const ProductDetail = memo(({ produto, index }) => {
+  const precoOriginal = produto.preco * produto.quantidade;
+  
+  const precoComDesconto = useMemo(() => {
+    if (!produto.desconto?.valor) return precoOriginal;
+
+    const valorDesconto = parseFloat(produto.desconto.valor.toString().replace(",", ".")) || 0;
+    let desconto = 0;
+
+    if (produto.desconto.tipo === "percentual") {
+      desconto = (precoOriginal * valorDesconto) / 100;
+    } else {
+      desconto = valorDesconto;
+    }
+
+    return Math.max(0, precoOriginal - desconto);
+  }, [produto.preco, produto.quantidade, produto.desconto]);
+
+  return (
+    <View style={styles.produtoDetail}>
+      <Text style={styles.produtoDetailName}>{produto.nome}</Text>
+      {produto.variacaoSelecionada && (
+        <Text style={styles.produtoDetailVariation}>
+          {produto.variacaoSelecionada.tipo === "cor" ? "Cor" : "Tamanho"}
+          : {produto.variacaoSelecionada.valor}
+        </Text>
+      )}
+      <Text style={styles.produtoDetailInfo}>
+        Qtd: {produto.quantidade} x R$ {produto.preco?.toFixed(2) || "0.00"}
+      </Text>
+      {produto.desconto?.valor && (
+        <Text style={styles.produtoDetailDiscount}>
+          Desconto individual:{" "}
+          {produto.desconto.tipo === "percentual"
+            ? `${produto.desconto.valor}%`
+            : `R$ ${produto.desconto.valor}`}
+        </Text>
+      )}
+      <Text style={styles.produtoDetailTotal}>
+        Subtotal: R$ {precoComDesconto.toFixed(2)}
+      </Text>
+    </View>
+  );
+});
+
+ProductDetail.displayName = 'ProductDetail';
 
 const OrderDetailsModal = ({
   visible,
@@ -27,51 +74,25 @@ const OrderDetailsModal = ({
   onEditOrder,
   onDeleteOrder,
 }) => {
-  const [showExportOptions, setShowExportOptions] = useState(false);
-
-  if (!order) return null;
-
-  const handleExportWithOptions = () => {
+  const handleExportWithOptions = useCallback(() => {
     Alert.alert(
       "Exportar PDF",
       "Como deseja gerar o PDF?",
       [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Com Descontos",
-          onPress: () => onExportPDF(order, clientes, true),
-        },
-        {
-          text: "Sem Descontos",
-          onPress: () => onExportPDF(order, clientes, false),
-        },
+        { text: "Cancelar", style: "cancel" },
+        { text: "Com Descontos", onPress: () => onExportPDF(order, clientes, true) },
+        { text: "Sem Descontos", onPress: () => onExportPDF(order, clientes, false) },
       ],
       { cancelable: true }
     );
-  };
+  }, [order, clientes, onExportPDF]);
 
-  const calcularValorProdutoComDesconto = (produto) => {
-    const precoTotal = produto.preco * produto.quantidade;
+  const metodoPagamento = useMemo(() => {
+    if (!order) return '';
+    return metodoPagamentoOptions.find(m => m.value === order.metodoPagamento)?.label || order.metodoPagamento;
+  }, [order?.metodoPagamento]);
 
-    if (!produto.desconto?.valor) {
-      return precoTotal;
-    }
-
-    const valorDesconto =
-      parseFloat(produto.desconto.valor.toString().replace(",", ".")) || 0;
-    let desconto = 0;
-
-    if (produto.desconto.tipo === "percentual") {
-      desconto = (precoTotal * valorDesconto) / 100;
-    } else {
-      desconto = valorDesconto;
-    }
-
-    return Math.max(0, precoTotal - desconto);
-  };
+  if (!order) return null;
 
   return (
     <Modal visible={visible} transparent animationType="slide">
@@ -117,13 +138,7 @@ const OrderDetailsModal = ({
             </Text>
 
             <Text style={styles.detailLabel}>Método de Pagamento:</Text>
-            <Text style={styles.detailValue}>
-              {
-                metodoPagamentoOptions.find(
-                  (m) => m.value === order.metodoPagamento
-                )?.label
-              }
-            </Text>
+            <Text style={styles.detailValue}>{metodoPagamento}</Text>
 
             {order.metodoPagamento === "boleto" && order.prazos?.length > 0 && (
               <>
@@ -137,39 +152,9 @@ const OrderDetailsModal = ({
             )}
 
             <Text style={styles.detailLabel}>Produtos:</Text>
-            {order.produtos?.map((produto, index) => {
-              const precoOriginal = produto.preco * produto.quantidade;
-              const precoComDesconto = calcularValorProdutoComDesconto(produto);
-
-              return (
-                <View key={index} style={styles.produtoDetail}>
-                  <Text style={styles.produtoDetailName}>{produto.nome}</Text>
-                  {produto.variacaoSelecionada && (
-                    <Text style={styles.produtoDetailVariation}>
-                      {produto.variacaoSelecionada.tipo === "cor"
-                        ? "Cor"
-                        : "Tamanho"}
-                      : {produto.variacaoSelecionada.valor}
-                    </Text>
-                  )}
-                  <Text style={styles.produtoDetailInfo}>
-                    Qtd: {produto.quantidade} x R${" "}
-                    {produto.preco?.toFixed(2) || "0.00"}
-                  </Text>
-                  {produto.desconto?.valor && (
-                    <Text style={styles.produtoDetailDiscount}>
-                      Desconto individual:{" "}
-                      {produto.desconto.tipo === "percentual"
-                        ? `${produto.desconto.valor}%`
-                        : `R$ ${produto.desconto.valor}`}
-                    </Text>
-                  )}
-                  <Text style={styles.produtoDetailTotal}>
-                    Subtotal: R$ {precoComDesconto.toFixed(2)}
-                  </Text>
-                </View>
-              );
-            })}
+            {order.produtos?.map((produto, index) => (
+              <ProductDetail key={index} produto={produto} index={index} />
+            ))}
 
             {order.desconto?.valor && (
               <>
@@ -260,6 +245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
+    marginBottom: 20,
   },
   exportButtonText: {
     color: "#fff",
@@ -293,17 +279,6 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 16,
     color: "#666",
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: "flex-start",
-  },
-  statusText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
   },
   produtoDetail: {
     backgroundColor: "#f8f8f8",

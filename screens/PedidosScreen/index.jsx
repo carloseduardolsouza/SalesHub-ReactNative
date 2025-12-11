@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
@@ -12,6 +12,15 @@ import ProductSelectionModal from './components/ProductSelectionModal';
 import OrderDetailsModal from './components/OrderDetailsModal';
 import { generateOrderHTML } from './utils/pdfGenerator';
 import { calculateOrderTotals } from './utils/calculations';
+
+const INITIAL_ORDER_STATE = {
+  cliente: '',
+  produtos: [],
+  desconto: { tipo: 'percentual', valor: '' },
+  metodoPagamento: 'dinheiro',
+  prazos: [],
+  observacoes: '',
+};
 
 const PedidosScreen = () => {
   // Estados principais
@@ -30,7 +39,6 @@ const PedidosScreen = () => {
   });
 
   // Estados de filtros e busca
-  const [filteredPedidos, setFilteredPedidos] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('Todos');
 
@@ -44,31 +52,41 @@ const PedidosScreen = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState(null);
 
-  // Estado do novo pedido (com descontos individuais)
-  const [newOrder, setNewOrder] = useState({
-    cliente: '',
-    produtos: [], // Cada produto terá: { ...produto, desconto: { tipo: 'percentual', valor: '' } }
-    desconto: { tipo: 'percentual', valor: '' }, // Desconto geral
-    metodoPagamento: 'dinheiro',
-    prazos: [],
-    observacoes: '',
-  });
+  // Estado do novo pedido
+  const [newOrder, setNewOrder] = useState(INITIAL_ORDER_STATE);
+
+  // Memoiza pedidos filtrados
+  const filteredPedidos = useMemo(() => {
+    let filtered = pedidos;
+
+    if (searchText) {
+      const searchLower = searchText.toLowerCase();
+      filtered = filtered.filter(pedido =>
+        pedido.cliente.toLowerCase().includes(searchLower) ||
+        pedido.id.toString().includes(searchText)
+      );
+    }
+
+    if (selectedStatus !== 'Todos') {
+      filtered = filtered.filter(pedido => pedido.status === selectedStatus);
+    }
+
+    return filtered;
+  }, [pedidos, searchText, selectedStatus]);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    filterPedidos();
-  }, [searchText, selectedStatus, pedidos]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const pedidosData = await AsyncStorage.getItem('pedidos');
-      const clientesData = await AsyncStorage.getItem('clientes');
-      const produtosData = await AsyncStorage.getItem('produtos');
-      const industriasData = await AsyncStorage.getItem('industrias');
-      const settingsData = await AsyncStorage.getItem('settings');
+      const [pedidosData, clientesData, produtosData, industriasData, settingsData] = await Promise.all([
+        AsyncStorage.getItem('pedidos'),
+        AsyncStorage.getItem('clientes'),
+        AsyncStorage.getItem('produtos'),
+        AsyncStorage.getItem('industrias'),
+        AsyncStorage.getItem('settings')
+      ]);
 
       setPedidos(pedidosData ? JSON.parse(pedidosData) : []);
       setClientes(clientesData ? JSON.parse(clientesData) : []);
@@ -89,9 +107,9 @@ const PedidosScreen = () => {
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     }
-  };
+  }, []);
 
-  const savePedidos = async (newPedidos) => {
+  const savePedidos = useCallback(async (newPedidos) => {
     try {
       await AsyncStorage.setItem('pedidos', JSON.stringify(newPedidos));
       setPedidos(newPedidos);
@@ -99,39 +117,15 @@ const PedidosScreen = () => {
       console.error('Erro ao salvar pedidos:', error);
       Alert.alert('Erro', 'Erro ao salvar pedidos');
     }
-  };
+  }, []);
 
-  const filterPedidos = () => {
-    let filtered = pedidos;
-
-    if (searchText) {
-      filtered = filtered.filter(pedido =>
-        pedido.cliente.toLowerCase().includes(searchText.toLowerCase()) ||
-        pedido.id.toString().includes(searchText)
-      );
-    }
-
-    if (selectedStatus !== 'Todos') {
-      filtered = filtered.filter(pedido => pedido.status === selectedStatus);
-    }
-
-    setFilteredPedidos(filtered);
-  };
-
-  const resetOrderForm = () => {
-    setNewOrder({
-      cliente: '',
-      produtos: [],
-      desconto: { tipo: 'percentual', valor: '' },
-      metodoPagamento: 'dinheiro',
-      prazos: [],
-      observacoes: '',
-    });
+  const resetOrderForm = useCallback(() => {
+    setNewOrder(INITIAL_ORDER_STATE);
     setIsEditMode(false);
     setEditingOrderId(null);
-  };
+  }, []);
 
-  const createNewOrder = async () => {
+  const createNewOrder = useCallback(async () => {
     if (!newOrder.cliente || newOrder.produtos.length === 0) {
       Alert.alert('Erro', 'Selecione um cliente e pelo menos um produto!');
       return;
@@ -163,12 +157,11 @@ const PedidosScreen = () => {
     resetOrderForm();
     setShowNewOrderModal(false);
     Alert.alert('Sucesso', 'Pedido criado com sucesso!');
-  };
+  }, [newOrder, pedidos, savePedidos, resetOrderForm]);
 
-  const handleEditOrder = (order) => {
+  const handleEditOrder = useCallback((order) => {
     setShowOrderDetails(false);
     
-    // Garantir que produtos tenham desconto inicializado
     const produtosComDesconto = order.produtos.map(produto => ({
       ...produto,
       desconto: produto.desconto || { tipo: 'percentual', valor: '' }
@@ -186,9 +179,9 @@ const PedidosScreen = () => {
     setIsEditMode(true);
     setEditingOrderId(order.id);
     setShowNewOrderModal(true);
-  };
+  }, []);
 
-  const updateOrder = async () => {
+  const updateOrder = useCallback(async () => {
     if (!newOrder.cliente || newOrder.produtos.length === 0) {
       Alert.alert('Erro', 'Selecione um cliente e pelo menos um produto!');
       return;
@@ -212,8 +205,6 @@ const PedidosScreen = () => {
           prazos: newOrder.prazos,
           total,
           observacoes: newOrder.observacoes,
-          data: pedido.data,
-          status: pedido.status,
         };
       }
       return pedido;
@@ -224,14 +215,14 @@ const PedidosScreen = () => {
     resetOrderForm();
     setShowNewOrderModal(false);
     Alert.alert('Sucesso', 'Pedido atualizado com sucesso!');
-  };
+  }, [newOrder, pedidos, editingOrderId, savePedidos, resetOrderForm]);
 
-  const handleCloseOrderModal = () => {
+  const handleCloseOrderModal = useCallback(() => {
     resetOrderForm();
     setShowNewOrderModal(false);
-  };
+  }, [resetOrderForm]);
 
-  const exportOrderToPDF = async (pedido, clientes, mostrarDescontos = false) => {
+  const exportOrderToPDF = useCallback(async (pedido, clientes, mostrarDescontos = false) => {
     try {
       const htmlContent = generateOrderHTML(pedido, clientes, empresaSettings, mostrarDescontos);
       const descontoSuffix = mostrarDescontos ? '_com_descontos' : '_sem_descontos';
@@ -262,56 +253,53 @@ const PedidosScreen = () => {
       console.error('Erro ao gerar/compartilhar PDF:', error);
       Alert.alert('Erro', 'Não foi possível gerar ou compartilhar o PDF. Tente novamente.');
     }
-  };
+  }, [empresaSettings]);
 
-  const handleDeleteOrder = (order) => {
+  const handleDeleteOrder = useCallback((order) => {
     Alert.alert(
       'Confirmar Exclusão',
       `Tem certeza que deseja excluir o pedido #${order.id}?`,
       [
-        {
-          text: 'Cancelar',
-          style: 'cancel'
-        },
+        { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Excluir',
           style: 'destructive',
-          onPress: () => deleteOrder(order.id)
+          onPress: async () => {
+            try {
+              const updatedPedidos = pedidos.filter(pedido => pedido.id !== order.id);
+              await savePedidos(updatedPedidos);
+              setShowOrderDetails(false);
+              Alert.alert('Sucesso', 'Pedido excluído com sucesso!');
+            } catch (error) {
+              console.error('Erro ao excluir pedido:', error);
+              Alert.alert('Erro', 'Não foi possível excluir o pedido. Tente novamente.');
+            }
+          }
         }
       ],
       { cancelable: true }
     );
-  };
+  }, [pedidos, savePedidos]);
 
-  const deleteOrder = async (orderId) => {
-    try {
-      const updatedPedidos = pedidos.filter(pedido => pedido.id !== orderId);
-      await savePedidos(updatedPedidos);
-      setShowOrderDetails(false);
-      Alert.alert('Sucesso', 'Pedido excluído com sucesso!');
-    } catch (error) {
-      console.error('Erro ao excluir pedido:', error);
-      Alert.alert('Erro', 'Não foi possível excluir o pedido. Tente novamente.');
-    }
-  };
-
-  const handleSelectOrder = (order) => {
+  const handleSelectOrder = useCallback((order) => {
     setSelectedOrder(order);
     setShowOrderDetails(true);
-  };
+  }, []);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
-  };
+  }, [loadData]);
+
+  const handleOpenAddOrder = useCallback(() => {
+    resetOrderForm();
+    setShowNewOrderModal(true);
+  }, [resetOrderForm]);
 
   return (
     <View style={styles.container}>
-      <Header onAddPress={() => {
-        resetOrderForm();
-        setShowNewOrderModal(true);
-      }} />
+      <Header onAddPress={handleOpenAddOrder} />
 
       <SearchAndFilters
         searchText={searchText}

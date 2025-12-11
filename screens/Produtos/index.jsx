@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,6 @@ import { useImageHandler } from './hooks/useImageHandler';
 
 const ProdutosScreen = () => {
   const [produtos, setProdutos] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [selectedIndustria, setSelectedIndustria] = useState(null);
   const [showProductModal, setShowProductModal] = useState(false);
@@ -53,85 +52,17 @@ const ProdutosScreen = () => {
   const { openCamera, openGallery } = useImageHandler();
 
   useEffect(() => {
-    loadProdutos();
-    loadIndustrias();
+    loadData();
   }, []);
 
-  useEffect(() => {
-    filterProducts();
-  }, [searchText, selectedIndustria, produtos]);
-
-  const loadProdutos = async () => {
-    try {
-      const produtosData = await AsyncStorage.getItem('produtos');
-      if (produtosData) {
-        const produtosParsed = JSON.parse(produtosData);
-        const produtosMigrados = produtosParsed.map(p => ({
-          ...p,
-          imagens: p.imagens || (p.imagem ? [p.imagem] : [])
-        }));
-        setProdutos(produtosMigrados);
-        setFilteredProducts(produtosMigrados);
-      } else {
-        setProdutos([]);
-        setFilteredProducts([]);
-      }
-    } catch (error) {
-      console.error('❌ Erro ao carregar produtos:', error);
-      Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
-    }
-  };
-
-  const loadIndustrias = async () => {
-    try {
-      const industriasData = await AsyncStorage.getItem('industrias');
-      if (industriasData) {
-        setIndustrias(JSON.parse(industriasData));
-      }
-    } catch (error) {
-      console.error('Erro ao carregar indústrias:', error);
-    }
-  };
-
-  const saveProdutos = async (produtosData) => {
-    try {
-      const jsonString = JSON.stringify(produtosData);
-      const sizeKB = (jsonString.length * 2) / 1024;
-      
-      if (sizeKB > 5000) {
-        throw new Error('Dados muito grandes! Reduza o número de imagens ou produtos.');
-      }
-
-      await AsyncStorage.setItem('produtos', jsonString);
-      setProdutos(produtosData);
-      setFilteredProducts(produtosData);
-    } catch (error) {
-      console.error('❌ Erro ao salvar produtos:', error);
-      if (error.message.includes('Row too big')) {
-        Alert.alert(
-          'Dados Muito Grandes',
-          'As imagens são muito pesadas. Por favor:\n\n' +
-          '• Use menos imagens por produto (máx. 3)\n' +
-          '• As imagens já são comprimidas automaticamente\n' +
-          '• Considere deletar produtos antigos se necessário',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert('Erro', 'Erro ao salvar dados dos produtos. Por favor, tente novamente.');
-      }
-      throw error;
-    }
-  };
-
-  const filterProducts = () => {
-    let filtered = produtos.slice();
+  // Memoiza produtos filtrados
+  const filteredProducts = useMemo(() => {
+    let filtered = produtos;
     
-    // Filtro por indústria
     if (selectedIndustria) {
       filtered = filtered.filter(produto => produto.industria === selectedIndustria);
     }
     
-    // Filtro por texto de pesquisa
     if (searchText) {
       const q = searchText.toLowerCase();
       filtered = filtered.filter(produto =>
@@ -140,10 +71,11 @@ const ProdutosScreen = () => {
       );
     }
     
-    setFilteredProducts(filtered);
-  };
+    return filtered;
+  }, [produtos, searchText, selectedIndustria]);
 
-  const getProductCount = () => {
+  // Memoiza contagem de produtos
+  const productCount = useMemo(() => {
     const byIndustry = {};
     produtos.forEach(produto => {
       const industria = produto.industria || 'Sem indústria';
@@ -154,9 +86,64 @@ const ProdutosScreen = () => {
       total: produtos.length,
       byIndustry
     };
-  };
+  }, [produtos]);
 
-  const openEditMode = (produto) => {
+  const loadData = useCallback(async () => {
+    try {
+      const [produtosData, industriasData] = await Promise.all([
+        AsyncStorage.getItem('produtos'),
+        AsyncStorage.getItem('industrias')
+      ]);
+
+      if (produtosData) {
+        const produtosParsed = JSON.parse(produtosData);
+        const produtosMigrados = produtosParsed.map(p => ({
+          ...p,
+          imagens: p.imagens || (p.imagem ? [p.imagem] : [])
+        }));
+        setProdutos(produtosMigrados);
+      } else {
+        setProdutos([]);
+      }
+
+      if (industriasData) {
+        setIndustrias(JSON.parse(industriasData));
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar produtos:', error);
+      Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
+    }
+  }, []);
+
+  const saveProdutos = useCallback(async (produtosData) => {
+    try {
+      const jsonString = JSON.stringify(produtosData);
+      const sizeKB = (jsonString.length * 2) / 1024;
+      
+      if (sizeKB > 5000) {
+        throw new Error('Dados muito grandes! Reduza o número de imagens ou produtos.');
+      }
+
+      await AsyncStorage.setItem('produtos', jsonString);
+      setProdutos(produtosData);
+    } catch (error) {
+      console.error('❌ Erro ao salvar produtos:', error);
+      if (error.message.includes('Row too big')) {
+        Alert.alert(
+          'Dados Muito Grandes',
+          'As imagens são muito pesadas. Por favor:\n\n' +
+          '• Use menos imagens por produto (máx. 3)\n' +
+          '• As imagens já são comprimidas automaticamente\n' +
+          '• Considere deletar produtos antigos se necessário'
+        );
+      } else {
+        Alert.alert('Erro', 'Erro ao salvar dados dos produtos.');
+      }
+      throw error;
+    }
+  }, []);
+
+  const openEditMode = useCallback((produto) => {
     setIsEditMode(true);
     setNovoProduto({
       id: produto.id,
@@ -169,21 +156,20 @@ const ProdutosScreen = () => {
     });
     setShowProductModal(false);
     setShowAddProductModal(true);
-  };
+  }, [setNovoProduto]);
 
-  const salvarProduto = async () => {
+  const salvarProduto = useCallback(async () => {
     if (!novoProduto.nome.trim() || !novoProduto.preco || !novoProduto.industria) {
       Alert.alert('Erro', 'Nome, Preço e Indústria são obrigatórios!');
       return;
     }
 
     if (novoProduto.imagens.length > 5) {
-      Alert.alert('Atenção', 'Máximo de 5 imagens por produto para evitar problemas de armazenamento.');
+      Alert.alert('Atenção', 'Máximo de 5 imagens por produto.');
       return;
     }
 
     const preco = parseMoneyValue(novoProduto.preco);
-
     if (preco <= 0) {
       Alert.alert('Erro', 'O preço deve ser maior que zero!');
       return;
@@ -219,10 +205,7 @@ const ProdutosScreen = () => {
           dataCadastro: new Date().toISOString()
         };
 
-        const produtosAtuais = await AsyncStorage.getItem('produtos');
-        const listaProdutosAtuais = produtosAtuais ? JSON.parse(produtosAtuais) : [];
-        const novosProdutos = [produto, ...listaProdutosAtuais];
-        
+        const novosProdutos = [produto, ...produtos];
         await saveProdutos(novosProdutos);
         Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
       }
@@ -230,13 +213,13 @@ const ProdutosScreen = () => {
       resetForm();
       setIsEditMode(false);
       setShowAddProductModal(false);
-      await loadProdutos();
+      await loadData();
     } catch (error) {
       console.error('❌ Erro ao salvar produto:', error);
     }
-  };
+  }, [novoProduto, isEditMode, produtos, parseMoneyValue, saveProdutos, resetForm, loadData]);
 
-  const deleteProduto = (produtoId) => {
+  const deleteProduto = useCallback((produtoId) => {
     Alert.alert(
       'Excluir Produto',
       'Tem certeza que deseja excluir este produto?',
@@ -259,17 +242,17 @@ const ProdutosScreen = () => {
         }
       ]
     );
-  };
+  }, [produtos, saveProdutos]);
 
-  const handleImageSelected = (compressedImage) => {
+  const handleImageSelected = useCallback((compressedImage) => {
     setNovoProduto(prev => ({ 
       ...prev, 
       imagens: [...prev.imagens, compressedImage] 
     }));
     setShowImagePickerModal(false);
-  };
+  }, [setNovoProduto]);
 
-  const removeImage = (index) => {
+  const removeImage = useCallback((index) => {
     Alert.alert(
       'Remover Imagem',
       'Deseja remover esta imagem?',
@@ -285,21 +268,44 @@ const ProdutosScreen = () => {
         }
       ]
     );
-  };
+  }, [setNovoProduto]);
 
-  const nextImage = () => {
-    if (selectedProduct && selectedProduct.imagens) {
+  const nextImage = useCallback(() => {
+    if (selectedProduct?.imagens) {
       setCurrentImageIndex((prev) => (prev + 1) % selectedProduct.imagens.length);
     }
-  };
+  }, [selectedProduct]);
 
-  const prevImage = () => {
-    if (selectedProduct && selectedProduct.imagens) {
+  const prevImage = useCallback(() => {
+    if (selectedProduct?.imagens) {
       setCurrentImageIndex((prev) => 
         prev === 0 ? selectedProduct.imagens.length - 1 : prev - 1
       );
     }
-  };
+  }, [selectedProduct]);
+
+  const handleSelectProduct = useCallback((produto) => {
+    setSelectedProduct(produto);
+    setCurrentImageIndex(0);
+    setShowProductModal(true);
+  }, []);
+
+  const handleOpenAddProduct = useCallback(() => {
+    setIsEditMode(false);
+    setShowAddProductModal(true);
+  }, []);
+
+  const handleCloseAddProduct = useCallback(() => {
+    setShowAddProductModal(false);
+    setIsEditMode(false);
+    resetForm();
+  }, [resetForm]);
+
+  const renderProduct = useCallback(({ item }) => (
+    <ProductCard produto={item} onPress={() => handleSelectProduct(item)} />
+  ), [handleSelectProduct]);
+
+  const keyExtractor = useCallback((item) => String(item.id), []);
 
   return (
     <View style={styles.container}>
@@ -319,41 +325,30 @@ const ProdutosScreen = () => {
         industrias={industrias}
         selectedIndustria={selectedIndustria}
         onSelectIndustria={setSelectedIndustria}
-        productCount={getProductCount()}
+        productCount={productCount}
       />
 
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => {
-          setIsEditMode(false);
-          setShowAddProductModal(true);
-        }}
-      >
+      <TouchableOpacity style={styles.addButton} onPress={handleOpenAddProduct}>
         <Plus size={20} color="#fff" />
         <Text style={styles.addButtonText}>Cadastrar Produto</Text>
       </TouchableOpacity>
 
       <FlatList
         data={filteredProducts}
-        renderItem={({ item }) => (
-          <ProductCard
-            produto={item}
-            onPress={() => {
-              setSelectedProduct(item);
-              setCurrentImageIndex(0);
-              setShowProductModal(true);
-            }}
-          />
-        )}
-        keyExtractor={item => String(item.id)}
+        renderItem={renderProduct}
+        keyExtractor={keyExtractor}
         numColumns={2}
         contentContainerStyle={styles.productsList}
         showsVerticalScrollIndicator={false}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
+        initialNumToRender={10}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>
               {selectedIndustria || searchText 
-                ? 'Nenhum produto encontrado com os filtros aplicados' 
+                ? 'Nenhum produto encontrado' 
                 : 'Nenhum produto cadastrado'}
             </Text>
             {(selectedIndustria || searchText) && (
@@ -491,21 +486,11 @@ const ProdutosScreen = () => {
               />
 
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setShowAddProductModal(false);
-                    setIsEditMode(false);
-                    resetForm();
-                  }}
-                >
+                <TouchableOpacity style={styles.cancelButton} onPress={handleCloseAddProduct}>
                   <Text style={styles.cancelButtonText}>Cancelar</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.saveButton}
-                  onPress={salvarProduto}
-                >
+                <TouchableOpacity style={styles.saveButton} onPress={salvarProduto}>
                   <Text style={styles.saveButtonText}>
                     {isEditMode ? 'Atualizar' : 'Salvar'}
                   </Text>
@@ -584,10 +569,6 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
   addButtonText: {
     color: '#fff',
@@ -690,10 +671,6 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '80%',
     elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
   },
   imagePickerOption: {
     flexDirection: 'row',
@@ -718,7 +695,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginRight: 8,
-    elevation: 2,
   },
   cancelButtonText: {
     textAlign: 'center',
@@ -732,7 +708,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginLeft: 8,
-    elevation: 3,
   },
   saveButtonText: {
     textAlign: 'center',
@@ -749,7 +724,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginRight: 8,
-    elevation: 3,
   },
   editButtonText: {
     textAlign: 'center',
@@ -764,7 +738,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginLeft: 8,
-    elevation: 3,
   },
   deleteButtonText: {
     textAlign: 'center',
@@ -777,7 +750,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 15,
     marginTop: 10,
-    elevation: 3,
   },
   closeButtonText: {
     textAlign: 'center',

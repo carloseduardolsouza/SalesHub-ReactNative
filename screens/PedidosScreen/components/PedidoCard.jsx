@@ -1,6 +1,5 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { getStatusColor, getStatusText } from '../utils/statusHelpers';
 
 const metodoPagamentoOptions = [
   { value: 'dinheiro', label: 'Dinheiro' },
@@ -9,21 +8,29 @@ const metodoPagamentoOptions = [
   { value: 'boleto', label: 'Boleto' }
 ];
 
-const PedidoCard = ({ pedido, onPress }) => (
-  <TouchableOpacity style={styles.card} onPress={onPress}>
-    <View style={styles.header}>
-      <Text style={styles.id}>Pedido #{pedido.id}</Text>
-    </View>
-    <Text style={styles.cliente}>{pedido.cliente}</Text>
-    <Text style={styles.data}>
-      {new Date(pedido.data).toLocaleDateString('pt-BR')}
-    </Text>
-    <Text style={styles.total}>Total: R$ {pedido.total?.toFixed(2) || '0.00'}</Text>
-    <Text style={styles.pagamento}>
-      {metodoPagamentoOptions.find(m => m.value === pedido.metodoPagamento)?.label}
-    </Text>
-  </TouchableOpacity>
-);
+const PedidoCard = memo(({ pedido, onPress }) => {
+  const metodoPagamento = metodoPagamentoOptions.find(
+    m => m.value === pedido.metodoPagamento
+  )?.label || pedido.metodoPagamento;
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={onPress}>
+      <View style={styles.header}>
+        <Text style={styles.id}>Pedido #{pedido.id}</Text>
+      </View>
+      <Text style={styles.cliente}>{pedido.cliente}</Text>
+      <Text style={styles.data}>
+        {new Date(pedido.data).toLocaleDateString('pt-BR')}
+      </Text>
+      <Text style={styles.total}>
+        Total: R$ {pedido.total?.toFixed(2) || '0.00'}
+      </Text>
+      <Text style={styles.pagamento}>{metodoPagamento}</Text>
+    </TouchableOpacity>
+  );
+});
+
+PedidoCard.displayName = 'PedidoCard';
 
 const styles = StyleSheet.create({
   card: {
@@ -47,16 +54,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   cliente: {
     fontSize: 16,

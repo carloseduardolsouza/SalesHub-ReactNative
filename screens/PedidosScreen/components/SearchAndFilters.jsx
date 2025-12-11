@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, TextInput, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { getStatusText } from '../utils/statusHelpers';
 
 const statusOptions = ['Todos', 'pendente', 'processando', 'concluido', 'cancelado'];
 
-const SearchAndFilters = ({ searchText, onSearchChange, selectedStatus, onStatusChange }) => (
+const SearchAndFilters = memo(({ searchText, onSearchChange, selectedStatus, onStatusChange }) => (
   <View style={styles.controls}>
     <TextInput
       style={styles.searchInput}
@@ -25,7 +25,9 @@ const SearchAndFilters = ({ searchText, onSearchChange, selectedStatus, onStatus
       </Picker>
     </View>
   </View>
-);
+));
+
+SearchAndFilters.displayName = 'SearchAndFilters';
 
 const styles = StyleSheet.create({
   controls: {

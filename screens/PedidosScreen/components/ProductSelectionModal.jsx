@@ -1,7 +1,47 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, memo } from 'react';
 import { View, Text, Modal, FlatList, TextInput, TouchableOpacity, Image, ScrollView, StyleSheet } from 'react-native';
 import { Search, X, ShoppingCart, Check } from 'lucide-react-native';
 import { Picker } from '@react-native-picker/picker';
+
+// Componente de item de produto memoizado
+const ProductItem = memo(({ produto, onPress, getProductImage }) => (
+  <View style={styles.productItem}>
+    <Image
+      source={{ uri: getProductImage(produto) }}
+      style={styles.productImage}
+    />
+    <View style={styles.productInfo}>
+      <Text style={styles.productName}>{produto.nome}</Text>
+      <Text style={styles.productIndustria}>{produto.industria}</Text>
+      <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
+      {produto.variacoes && produto.variacoes.length > 0 && (
+        <Text style={styles.productVariations}>
+          {produto.variacoes.length} variação{produto.variacoes.length > 1 ? 'ões' : ''}
+        </Text>
+      )}
+    </View>
+    <TouchableOpacity style={styles.addButton} onPress={onPress}>
+      <ShoppingCart size={20} color="#fff" />
+    </TouchableOpacity>
+  </View>
+));
+
+ProductItem.displayName = 'ProductItem';
+
+// Componente de chip de indústria memoizado
+const IndustriaChip = memo(({ industria, isSelected, count, onPress }) => (
+  <TouchableOpacity
+    style={[styles.industriaOption, isSelected && styles.industriaSelected]}
+    onPress={onPress}
+  >
+    <Text style={[styles.industriaOptionText, isSelected && styles.industriaSelectedText]}>
+      {industria.nome} ({count})
+    </Text>
+    {isSelected && <Check size={16} color="#fff" style={styles.industriaCheck} />}
+  </TouchableOpacity>
+));
+
+IndustriaChip.displayName = 'IndustriaChip';
 
 const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrder, setNewOrder }) => {
   const [productSearch, setProductSearch] = useState('');
@@ -10,12 +50,23 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedVariation, setSelectedVariation] = useState('');
 
+  // Memoiza contagem de produtos por indústria
+  const productCountByIndustry = useMemo(() => {
+    const counts = {};
+    produtos.forEach(p => {
+      counts[p.industria] = (counts[p.industria] || 0) + 1;
+    });
+    return counts;
+  }, [produtos]);
+
+  // Memoiza produtos filtrados
   const filteredProducts = useMemo(() => {
     let filtered = produtos;
 
     if (productSearch.trim()) {
+      const searchLower = productSearch.toLowerCase();
       filtered = filtered.filter(produto =>
-        produto.nome.toLowerCase().includes(productSearch.toLowerCase())
+        produto.nome.toLowerCase().includes(searchLower)
       );
     }
 
@@ -28,27 +79,36 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
     return filtered;
   }, [produtos, productSearch, selectedIndustrias]);
 
-  const toggleIndustria = (industriaNome) => {
-    if (selectedIndustrias.includes(industriaNome)) {
-      setSelectedIndustrias(selectedIndustrias.filter(i => i !== industriaNome));
-    } else {
-      setSelectedIndustrias([...selectedIndustrias, industriaNome]);
+  // Função para obter imagem (memoizada)
+  const getProductImage = useCallback((produto) => {
+    if (produto.imagens && produto.imagens.length > 0) {
+      return produto.imagens[0];
     }
-  };
+    if (produto.imagem) {
+      return produto.imagem;
+    }
+    return 'https://via.placeholder.com/60x60/666666/white?text=Produto';
+  }, []);
 
-  const handleProductClick = (produto) => {
-    // Se o produto tem variações, mostrar modal de seleção
+  const toggleIndustria = useCallback((industriaNome) => {
+    setSelectedIndustrias(prev =>
+      prev.includes(industriaNome)
+        ? prev.filter(i => i !== industriaNome)
+        : [...prev, industriaNome]
+    );
+  }, []);
+
+  const handleProductClick = useCallback((produto) => {
     if (produto.variacoes && produto.variacoes.length > 0) {
       setSelectedProduct(produto);
-      setSelectedVariation(''); // Reset
+      setSelectedVariation('');
       setShowVariationModal(true);
     } else {
-      // Se não tem variações, adicionar direto
       addProductToOrder(produto, null);
     }
-  };
+  }, []);
 
-  const addProductWithVariation = () => {
+  const addProductWithVariation = useCallback(() => {
     if (!selectedVariation) {
       alert('Por favor, selecione uma variação!');
       return;
@@ -62,61 +122,52 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
     setShowVariationModal(false);
     setSelectedProduct(null);
     setSelectedVariation('');
-  };
+  }, [selectedProduct, selectedVariation]);
 
-  const addProductToOrder = (produto, variacao) => {
-    // Criar uma chave única considerando produto + variação
-    const variacaoKey = variacao ? `${variacao.tipo}:${variacao.valor}` : null;
-    const productKey = variacaoKey ? `${produto.id}_${variacaoKey}` : produto.id;
-
-    const existingProduct = newOrder.produtos.find(p => {
-      if (variacaoKey) {
-        return p.id === produto.id && p.variacaoSelecionada?.tipo === variacao.tipo && 
-               p.variacaoSelecionada?.valor === variacao.valor;
-      }
-      return p.id === produto.id && !p.variacaoSelecionada;
-    });
-
-    if (existingProduct) {
-      const updatedProducts = newOrder.produtos.map(p => {
-        if (variacaoKey) {
-          if (p.id === produto.id && p.variacaoSelecionada?.tipo === variacao.tipo && 
-              p.variacaoSelecionada?.valor === variacao.valor) {
-            return { ...p, quantidade: p.quantidade + 1 };
-          }
-        } else {
-          if (p.id === produto.id && !p.variacaoSelecionada) {
-            return { ...p, quantidade: p.quantidade + 1 };
-          }
+  const addProductToOrder = useCallback((produto, variacao) => {
+    setNewOrder(prev => {
+      const existingIndex = prev.produtos.findIndex(p => {
+        if (variacao) {
+          return p.id === produto.id && 
+                 p.variacaoSelecionada?.tipo === variacao.tipo && 
+                 p.variacaoSelecionada?.valor === variacao.valor;
         }
-        return p;
+        return p.id === produto.id && !p.variacaoSelecionada;
       });
-      setNewOrder({ ...newOrder, produtos: updatedProducts });
-    } else {
+
+      if (existingIndex !== -1) {
+        const updatedProducts = [...prev.produtos];
+        updatedProducts[existingIndex] = {
+          ...updatedProducts[existingIndex],
+          quantidade: updatedProducts[existingIndex].quantidade + 1
+        };
+        return { ...prev, produtos: updatedProducts };
+      }
+
       const novoProduto = {
         ...produto,
         quantidade: 1,
         precoUnitario: produto.preco,
-        variacaoSelecionada: variacao || null
+        variacaoSelecionada: variacao || null,
+        desconto: { tipo: 'percentual', valor: '' }
       };
-      setNewOrder({
-        ...newOrder,
-        produtos: [...newOrder.produtos, novoProduto]
-      });
-    }
-  };
 
-  // Função para pegar a primeira imagem do produto
-  const getProductImage = (produto) => {
-    if (produto.imagens && produto.imagens.length > 0) {
-      return produto.imagens[0];
-    }
-    // Fallback para produtos antigos que ainda usam 'imagem'
-    if (produto.imagem) {
-      return produto.imagem;
-    }
-    return 'https://via.placeholder.com/60x60/666666/white?text=Produto';
-  };
+      return {
+        ...prev,
+        produtos: [...prev.produtos, novoProduto]
+      };
+    });
+  }, [setNewOrder]);
+
+  const renderProductItem = useCallback(({ item }) => (
+    <ProductItem
+      produto={item}
+      onPress={() => handleProductClick(item)}
+      getProductImage={getProductImage}
+    />
+  ), [handleProductClick, getProductImage]);
+
+  const keyExtractor = useCallback((item) => item.id.toString(), []);
 
   return (
     <>
@@ -145,24 +196,13 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.industriasOptions}>
                   {industrias.map(industria => (
-                    <TouchableOpacity
+                    <IndustriaChip
                       key={industria.id}
-                      style={[
-                        styles.industriaOption,
-                        selectedIndustrias.includes(industria.nome) && styles.industriaSelected
-                      ]}
+                      industria={industria}
+                      isSelected={selectedIndustrias.includes(industria.nome)}
+                      count={productCountByIndustry[industria.nome] || 0}
                       onPress={() => toggleIndustria(industria.nome)}
-                    >
-                      <Text style={[
-                        styles.industriaOptionText,
-                        selectedIndustrias.includes(industria.nome) && styles.industriaSelectedText
-                      ]}>
-                        {industria.nome}
-                      </Text>
-                      {selectedIndustrias.includes(industria.nome) && (
-                        <Check size={16} color="#fff" style={styles.industriaCheck} />
-                      )}
-                    </TouchableOpacity>
+                    />
                   ))}
                 </View>
               </ScrollView>
@@ -170,32 +210,12 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
 
             <FlatList
               data={filteredProducts}
-              renderItem={({ item }) => (
-                <View style={styles.productItem}>
-                  <Image
-                    source={{ uri: getProductImage(item) }}
-                    style={styles.productImage}
-                  />
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName}>{item.nome}</Text>
-                    <Text style={styles.productIndustria}>{item.industria}</Text>
-                    <Text style={styles.productPrice}>R$ {item.preco.toFixed(2)}</Text>
-                    {item.variacoes && item.variacoes.length > 0 && (
-                      <Text style={styles.productVariations}>
-                        {item.variacoes.length} variação{item.variacoes.length > 1 ? 'ões' : ''}
-                      </Text>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.addButton}
-                    onPress={() => handleProductClick(item)}
-                  >
-                    <ShoppingCart size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              )}
-              keyExtractor={item => item.id.toString()}
+              renderItem={renderProductItem}
+              keyExtractor={keyExtractor}
               showsVerticalScrollIndicator={false}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={true}
               ListEmptyComponent={
                 <View style={styles.emptyProducts}>
                   <Text style={styles.emptyProductsText}>Nenhum produto encontrado</Text>
@@ -241,7 +261,7 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
                 <View style={styles.variationPickerContainer}>
                   <Picker
                     selectedValue={selectedVariation}
-                    onValueChange={(value) => setSelectedVariation(value)}
+                    onValueChange={setSelectedVariation}
                     style={styles.variationPicker}
                   >
                     <Picker.Item label="Selecione uma variação..." value="" />
@@ -461,7 +481,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  // Estilos do Modal de Variação
   variationModalContainer: {
     backgroundColor: '#fff',
     borderRadius: 15,
