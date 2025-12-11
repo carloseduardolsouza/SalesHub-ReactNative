@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -51,6 +51,9 @@ const ProdutosScreen = () => {
 
   const { openCamera, openGallery } = useImageHandler();
 
+  // Ref para evitar múltiplos carregamentos
+  const loadingRef = useRef(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -89,15 +92,20 @@ const ProdutosScreen = () => {
   }, [produtos]);
 
   const loadData = useCallback(async () => {
-    try {
-      const [produtosData, industriasData] = await Promise.all([
-        AsyncStorage.getItem('produtos'),
-        AsyncStorage.getItem('industrias')
-      ]);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
 
-      if (produtosData) {
-        const produtosParsed = JSON.parse(produtosData);
-        const produtosMigrados = produtosParsed.map(p => ({
+    try {
+      const keys = ['produtos', 'industrias'];
+      const values = await AsyncStorage.multiGet(keys);
+      
+      const dataMap = {};
+      values.forEach(([key, value]) => {
+        dataMap[key] = value ? JSON.parse(value) : null;
+      });
+
+      if (dataMap.produtos) {
+        const produtosMigrados = dataMap.produtos.map(p => ({
           ...p,
           imagens: p.imagens || (p.imagem ? [p.imagem] : [])
         }));
@@ -106,12 +114,14 @@ const ProdutosScreen = () => {
         setProdutos([]);
       }
 
-      if (industriasData) {
-        setIndustrias(JSON.parse(industriasData));
+      if (dataMap.industrias) {
+        setIndustrias(dataMap.industrias);
       }
     } catch (error) {
       console.error('❌ Erro ao carregar produtos:', error);
       Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
+    } finally {
+      loadingRef.current = false;
     }
   }, []);
 
@@ -301,11 +311,22 @@ const ProdutosScreen = () => {
     resetForm();
   }, [resetForm]);
 
+  const handleClearFilters = useCallback(() => {
+    setSearchText('');
+    setSelectedIndustria(null);
+  }, []);
+
   const renderProduct = useCallback(({ item }) => (
     <ProductCard produto={item} onPress={() => handleSelectProduct(item)} />
   ), [handleSelectProduct]);
 
   const keyExtractor = useCallback((item) => String(item.id), []);
+
+  const getItemLayout = useCallback((data, index) => ({
+    length: 200,
+    offset: 200 * index,
+    index,
+  }), []);
 
   return (
     <View style={styles.container}>
@@ -344,6 +365,7 @@ const ProdutosScreen = () => {
         windowSize={5}
         removeClippedSubviews={true}
         initialNumToRender={10}
+        getItemLayout={getItemLayout}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>
@@ -354,10 +376,7 @@ const ProdutosScreen = () => {
             {(selectedIndustria || searchText) && (
               <TouchableOpacity
                 style={styles.clearFiltersButton}
-                onPress={() => {
-                  setSearchText('');
-                  setSelectedIndustria(null);
-                }}
+                onPress={handleClearFilters}
               >
                 <Text style={styles.clearFiltersButtonText}>Limpar Filtros</Text>
               </TouchableOpacity>

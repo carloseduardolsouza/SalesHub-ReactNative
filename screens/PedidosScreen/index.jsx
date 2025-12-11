@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
@@ -55,16 +55,20 @@ const PedidosScreen = () => {
   // Estado do novo pedido
   const [newOrder, setNewOrder] = useState(INITIAL_ORDER_STATE);
 
-  // Memoiza pedidos filtrados
+  // Ref para evitar múltiplos carregamentos
+  const loadingRef = useRef(false);
+
+  // Memoiza pedidos filtrados com otimização
   const filteredPedidos = useMemo(() => {
     let filtered = pedidos;
 
     if (searchText) {
       const searchLower = searchText.toLowerCase();
-      filtered = filtered.filter(pedido =>
-        pedido.cliente.toLowerCase().includes(searchLower) ||
-        pedido.id.toString().includes(searchText)
-      );
+      filtered = filtered.filter(pedido => {
+        const clienteMatch = pedido.cliente?.toLowerCase().includes(searchLower);
+        const idMatch = pedido.id.toString().includes(searchText);
+        return clienteMatch || idMatch;
+      });
     }
 
     if (selectedStatus !== 'Todos') {
@@ -79,33 +83,37 @@ const PedidosScreen = () => {
   }, []);
 
   const loadData = useCallback(async () => {
-    try {
-      const [pedidosData, clientesData, produtosData, industriasData, settingsData] = await Promise.all([
-        AsyncStorage.getItem('pedidos'),
-        AsyncStorage.getItem('clientes'),
-        AsyncStorage.getItem('produtos'),
-        AsyncStorage.getItem('industrias'),
-        AsyncStorage.getItem('settings')
-      ]);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
 
-      setPedidos(pedidosData ? JSON.parse(pedidosData) : []);
-      setClientes(clientesData ? JSON.parse(clientesData) : []);
-      setProdutos(produtosData ? JSON.parse(produtosData) : []);
-      setIndustrias(industriasData ? JSON.parse(industriasData) : []);
+    try {
+      const keys = ['pedidos', 'clientes', 'produtos', 'industrias', 'settings'];
+      const values = await AsyncStorage.multiGet(keys);
       
-      if (settingsData) {
-        const settings = JSON.parse(settingsData);
+      const dataMap = {};
+      values.forEach(([key, value]) => {
+        dataMap[key] = value ? JSON.parse(value) : null;
+      });
+
+      setPedidos(dataMap.pedidos || []);
+      setClientes(dataMap.clientes || []);
+      setProdutos(dataMap.produtos || []);
+      setIndustrias(dataMap.industrias || []);
+      
+      if (dataMap.settings) {
         setEmpresaSettings({
-          empresaNome: settings.empresaNome || '',
-          empresaCNPJ: settings.empresaCNPJ || '',
-          empresaEmail: settings.empresaEmail || '',
-          empresaTelefone: settings.empresaTelefone || '',
-          empresaEndereco: settings.empresaEndereco || '',
-          empresaLogoUri: settings.empresaLogoUri || null
+          empresaNome: dataMap.settings.empresaNome || '',
+          empresaCNPJ: dataMap.settings.empresaCNPJ || '',
+          empresaEmail: dataMap.settings.empresaEmail || '',
+          empresaTelefone: dataMap.settings.empresaTelefone || '',
+          empresaEndereco: dataMap.settings.empresaEndereco || '',
+          empresaLogoUri: dataMap.settings.empresaLogoUri || null
         });
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
+    } finally {
+      loadingRef.current = false;
     }
   }, []);
 
@@ -297,6 +305,14 @@ const PedidosScreen = () => {
     setShowNewOrderModal(true);
   }, [resetOrderForm]);
 
+  const handleOpenProductSelection = useCallback(() => {
+    setShowProductSelectionModal(true);
+  }, []);
+
+  const handleCloseProductSelection = useCallback(() => {
+    setShowProductSelectionModal(false);
+  }, []);
+
   return (
     <View style={styles.container}>
       <Header onAddPress={handleOpenAddOrder} />
@@ -324,12 +340,12 @@ const PedidosScreen = () => {
         produtos={produtos}
         industrias={industrias}
         onCreateOrder={isEditMode ? updateOrder : createNewOrder}
-        onOpenProductSelection={() => setShowProductSelectionModal(true)}
+        onOpenProductSelection={handleOpenProductSelection}
       />
 
       <ProductSelectionModal
         visible={showProductSelectionModal}
-        onClose={() => setShowProductSelectionModal(false)}
+        onClose={handleCloseProductSelection}
         produtos={produtos}
         industrias={industrias}
         newOrder={newOrder}

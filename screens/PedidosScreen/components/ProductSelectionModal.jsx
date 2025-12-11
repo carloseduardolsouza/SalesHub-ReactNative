@@ -3,28 +3,43 @@ import { View, Text, Modal, FlatList, TextInput, TouchableOpacity, Image, Scroll
 import { Search, X, ShoppingCart, Check } from 'lucide-react-native';
 import { Picker } from '@react-native-picker/picker';
 
+// Função helper para obter imagem do produto
+const getProductImageHelper = (produto) => {
+  if (produto.imagens && produto.imagens.length > 0) {
+    return produto.imagens[0];
+  }
+  if (produto.imagem) {
+    return produto.imagem;
+  }
+  return 'https://via.placeholder.com/60x60/666666/white?text=Produto';
+};
+
 // Componente de item de produto memoizado
-const ProductItem = memo(({ produto, onPress, getProductImage }) => (
-  <View style={styles.productItem}>
-    <Image
-      source={{ uri: getProductImage(produto) }}
-      style={styles.productImage}
-    />
-    <View style={styles.productInfo}>
-      <Text style={styles.productName}>{produto.nome}</Text>
-      <Text style={styles.productIndustria}>{produto.industria}</Text>
-      <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
-      {produto.variacoes && produto.variacoes.length > 0 && (
-        <Text style={styles.productVariations}>
-          {produto.variacoes.length} variação{produto.variacoes.length > 1 ? 'ões' : ''}
-        </Text>
-      )}
+const ProductItem = memo(({ produto, onPress }) => {
+  const imagemUri = useMemo(() => getProductImageHelper(produto), [produto]);
+
+  return (
+    <View style={styles.productItem}>
+      <Image
+        source={{ uri: imagemUri }}
+        style={styles.productImage}
+      />
+      <View style={styles.productInfo}>
+        <Text style={styles.productName}>{produto.nome}</Text>
+        <Text style={styles.productIndustria}>{produto.industria}</Text>
+        <Text style={styles.productPrice}>R$ {produto.preco.toFixed(2)}</Text>
+        {produto.variacoes && produto.variacoes.length > 0 && (
+          <Text style={styles.productVariations}>
+            {produto.variacoes.length} variação{produto.variacoes.length > 1 ? 'ões' : ''}
+          </Text>
+        )}
+      </View>
+      <TouchableOpacity style={styles.addButton} onPress={onPress}>
+        <ShoppingCart size={20} color="#fff" />
+      </TouchableOpacity>
     </View>
-    <TouchableOpacity style={styles.addButton} onPress={onPress}>
-      <ShoppingCart size={20} color="#fff" />
-    </TouchableOpacity>
-  </View>
-));
+  );
+});
 
 ProductItem.displayName = 'ProductItem';
 
@@ -78,17 +93,6 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
 
     return filtered;
   }, [produtos, productSearch, selectedIndustrias]);
-
-  // Função para obter imagem (memoizada)
-  const getProductImage = useCallback((produto) => {
-    if (produto.imagens && produto.imagens.length > 0) {
-      return produto.imagens[0];
-    }
-    if (produto.imagem) {
-      return produto.imagem;
-    }
-    return 'https://via.placeholder.com/60x60/666666/white?text=Produto';
-  }, []);
 
   const toggleIndustria = useCallback((industriaNome) => {
     setSelectedIndustrias(prev =>
@@ -163,11 +167,16 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
     <ProductItem
       produto={item}
       onPress={() => handleProductClick(item)}
-      getProductImage={getProductImage}
     />
-  ), [handleProductClick, getProductImage]);
+  ), [handleProductClick]);
 
   const keyExtractor = useCallback((item) => item.id.toString(), []);
+
+  const getItemLayout = useCallback((data, index) => ({
+    length: 90,
+    offset: 90 * index,
+    index,
+  }), []);
 
   return (
     <>
@@ -216,6 +225,7 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
               maxToRenderPerBatch={10}
               windowSize={5}
               removeClippedSubviews={true}
+              getItemLayout={getItemLayout}
               ListEmptyComponent={
                 <View style={styles.emptyProducts}>
                   <Text style={styles.emptyProductsText}>Nenhum produto encontrado</Text>
@@ -247,7 +257,7 @@ const ProductSelectionModal = ({ visible, onClose, produtos, industrias, newOrde
               <>
                 <View style={styles.productPreview}>
                   <Image
-                    source={{ uri: getProductImage(selectedProduct) }}
+                    source={{ uri: getProductImageHelper(selectedProduct) }}
                     style={styles.productPreviewImage}
                   />
                   <View>
