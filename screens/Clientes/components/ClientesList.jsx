@@ -7,7 +7,8 @@ const ClientesList = ({
   selectedFields, 
   availableFields,
   onEdit,
-  onDelete 
+  onDelete,
+  refreshControl 
 }) => {
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
@@ -41,9 +42,13 @@ const ClientesList = ({
         )}
         keyExtractor={(item) => item.id.toString()}
         showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>Nenhum cliente encontrado</Text>
+            <Text style={styles.emptySubtext}>
+              Toque em "Novo Cliente" para cadastrar
+            </Text>
           </View>
         }
       />
@@ -95,6 +100,13 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#999',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+  emptySubtext: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
   },
 });
 
