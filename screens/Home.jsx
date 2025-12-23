@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -7,50 +7,63 @@ import {
   StyleSheet,
   Dimensions,
   RefreshControl,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LineChart, BarChart } from 'react-native-chart-kit';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Users, 
-  Package, 
-  ShoppingCart, 
+} from "react-native";
+import { LineChart, BarChart } from "react-native-chart-kit";
+import {
+  TrendingUp,
+  TrendingDown,
+  Users,
+  Package,
+  ShoppingCart,
   DollarSign,
   Calendar,
   ArrowUp,
-  ArrowDown
-} from 'lucide-react-native';
+  ArrowDown,
+} from "lucide-react-native";
+import database from "../database/database";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 // Componente otimizado para métricas
-const MetricCard = React.memo(({ title, value, icon: Icon, color, growth, onPress }) => (
-  <TouchableOpacity 
-    style={[styles.metricCard, { borderLeftColor: color }]} 
-    onPress={onPress}
-    activeOpacity={0.7}
-  >
-    <View style={styles.metricHeader}>
-      <View style={[styles.metricIcon, { backgroundColor: color + '20' }]}>
-        <Icon size={24} color={color} />
-      </View>
-      {growth !== undefined && growth !== 0 && (
-        <View style={[styles.growthBadge, { backgroundColor: growth >= 0 ? '#4CAF50' : '#F44336' }]}>
-          {growth >= 0 ? <ArrowUp size={12} color="#fff" /> : <ArrowDown size={12} color="#fff" />}
-          <Text style={styles.growthText}>{Math.abs(growth).toFixed(0)}%</Text>
+const MetricCard = React.memo(
+  ({ title, value, icon: Icon, color, growth, onPress }) => (
+    <TouchableOpacity
+      style={[styles.metricCard, { borderLeftColor: color }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.metricHeader}>
+        <View style={[styles.metricIcon, { backgroundColor: color + "20" }]}>
+          <Icon size={24} color={color} />
         </View>
-      )}
-    </View>
-    <Text style={styles.metricValue}>{value}</Text>
-    <Text style={styles.metricTitle}>{title}</Text>
-  </TouchableOpacity>
-));
+        {growth !== undefined && growth !== 0 && (
+          <View
+            style={[
+              styles.growthBadge,
+              { backgroundColor: growth >= 0 ? "#4CAF50" : "#F44336" },
+            ]}
+          >
+            {growth >= 0 ? (
+              <ArrowUp size={12} color="#fff" />
+            ) : (
+              <ArrowDown size={12} color="#fff" />
+            )}
+            <Text style={styles.growthText}>
+              {Math.abs(growth).toFixed(0)}%
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricTitle}>{title}</Text>
+    </TouchableOpacity>
+  )
+);
 
 // Componente otimizado para insights
 const InsightCard = React.memo(({ title, description, icon: Icon, color }) => (
   <View style={styles.insightCard}>
-    <View style={[styles.insightIcon, { backgroundColor: color + '20' }]}>
+    <View style={[styles.insightIcon, { backgroundColor: color + "20" }]}>
       <Icon size={20} color={color} />
     </View>
     <View style={styles.insightContent}>
@@ -62,10 +75,7 @@ const InsightCard = React.memo(({ title, description, icon: Icon, color }) => (
 
 // Componente otimizado para pedidos recentes
 const RecentOrderItem = React.memo(({ pedido, onPress }) => (
-  <TouchableOpacity 
-    style={styles.recentItem}
-    onPress={onPress}
-  >
+  <TouchableOpacity style={styles.recentItem} onPress={onPress}>
     <View style={styles.recentItemLeft}>
       <View style={styles.recentItemIcon}>
         <ShoppingCart size={20} color="#2196F3" />
@@ -74,7 +84,7 @@ const RecentOrderItem = React.memo(({ pedido, onPress }) => (
         <Text style={styles.recentItemTitle}>Pedido #{pedido.id}</Text>
         <Text style={styles.recentItemClient}>{pedido.cliente}</Text>
         <Text style={styles.recentItemDate}>
-          {new Date(pedido.data).toLocaleDateString('pt-BR')}
+          {new Date(pedido.data).toLocaleDateString("pt-BR")}
         </Text>
       </View>
     </View>
@@ -101,12 +111,12 @@ const HomeScreen = ({ navigation }) => {
     crescimentoPedidos: 0,
     crescimentoFaturamento: 0,
     vendasPorMes: {
-      labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
-      datasets: [{ data: [0] }]
+      labels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"],
+      datasets: [{ data: [0] }],
     },
     pedidosPorMes: {
-      labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'],
-      datasets: [{ data: [0] }]
+      labels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"],
+      datasets: [{ data: [0] }],
     },
     pedidosRecentes: [],
     produtoMaisVendido: null,
@@ -126,18 +136,18 @@ const HomeScreen = ({ navigation }) => {
 
   const loadDashboardData = async () => {
     try {
-      // Carregar todos os dados de uma vez
+      // Carregar todos os dados de uma vez usando SQLite
       const [clientes, produtos, pedidos, industrias] = await Promise.all([
-        AsyncStorage.getItem('clientes'),
-        AsyncStorage.getItem('produtos'),
-        AsyncStorage.getItem('pedidos'),
-        AsyncStorage.getItem('industrias'),
+        database.getAllClientes(),
+        database.getAllProdutos(),
+        database.getAllPedidos(),
+        database.getAllIndustrias(),
       ]);
 
-      const clientesArray = clientes ? JSON.parse(clientes) : [];
-      const produtosArray = produtos ? JSON.parse(produtos) : [];
-      const pedidosArray = pedidos ? JSON.parse(pedidos) : [];
-      const industriasArray = industrias ? JSON.parse(industrias) : [];
+      const clientesArray = clientes || [];
+      const produtosArray = produtos || [];
+      const pedidosArray = pedidos || [];
+      const industriasArray = industrias || [];
 
       // Calcular tudo de uma vez para evitar múltiplas iterações
       const hoje = new Date();
@@ -158,7 +168,7 @@ const HomeScreen = ({ navigation }) => {
       const pedidosRecentes = [];
 
       // Loop único para processar todos os pedidos
-      pedidosArray.forEach(pedido => {
+      pedidosArray.forEach((pedido) => {
         const total = Number(pedido?.total) || 0;
         faturamentoTotal += total;
 
@@ -187,13 +197,19 @@ const HomeScreen = ({ navigation }) => {
 
         // Produtos mais vendidos
         if (Array.isArray(pedido.produtos)) {
-          pedido.produtos.forEach(produto => {
+          pedido.produtos.forEach((produto) => {
             if (produto?.nome) {
               if (!produtosVendidos[produto.nome]) {
-                produtosVendidos[produto.nome] = { nome: produto.nome, quantidade: 0, valor: 0 };
+                produtosVendidos[produto.nome] = {
+                  nome: produto.nome,
+                  quantidade: 0,
+                  valor: 0,
+                };
               }
-              produtosVendidos[produto.nome].quantidade += Number(produto?.quantidade) || 0;
-              produtosVendidos[produto.nome].valor += (Number(produto?.preco) * Number(produto?.quantidade)) || 0;
+              produtosVendidos[produto.nome].quantidade +=
+                Number(produto?.quantidade) || 0;
+              produtosVendidos[produto.nome].valor +=
+                Number(produto?.preco) * Number(produto?.quantidade) || 0;
             }
           });
         }
@@ -201,7 +217,11 @@ const HomeScreen = ({ navigation }) => {
         // Clientes com mais compras
         if (pedido.cliente) {
           if (!comprasPorCliente[pedido.cliente]) {
-            comprasPorCliente[pedido.cliente] = { nome: pedido.cliente, quantidade: 0, valor: 0 };
+            comprasPorCliente[pedido.cliente] = {
+              nome: pedido.cliente,
+              quantidade: 0,
+              valor: 0,
+            };
           }
           comprasPorCliente[pedido.cliente].quantidade++;
           comprasPorCliente[pedido.cliente].valor += total;
@@ -209,7 +229,8 @@ const HomeScreen = ({ navigation }) => {
 
         // Métodos de pagamento
         if (pedido.metodoPagamento) {
-          metodosPagamento[pedido.metodoPagamento] = (metodosPagamento[pedido.metodoPagamento] || 0) + 1;
+          metodosPagamento[pedido.metodoPagamento] =
+            (metodosPagamento[pedido.metodoPagamento] || 0) + 1;
         }
 
         // Pedidos recentes (apenas os 5 primeiros)
@@ -221,40 +242,51 @@ const HomeScreen = ({ navigation }) => {
       // Ordenar pedidos recentes uma única vez
       pedidosRecentes.sort((a, b) => new Date(b.data) - new Date(a.data));
 
-      const ticketMedio = pedidosArray.length > 0 ? faturamentoTotal / pedidosArray.length : 0;
+      const ticketMedio =
+        pedidosArray.length > 0 ? faturamentoTotal / pedidosArray.length : 0;
 
-      // Calcular crescimentos de clientes e produtos (apenas se necessário)
-      const clientesMesAtualCount = clientesArray.filter(c => {
+      // Calcular crescimentos de clientes e produtos
+      const clientesMesAtualCount = clientesArray.filter((c) => {
         try {
           const data = new Date(c.dataCadastro);
-          return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
+          return (
+            data.getMonth() === mesAtual && data.getFullYear() === anoAtual
+          );
         } catch (e) {
           return false;
         }
       }).length;
 
-      const clientesMesAnteriorCount = clientesArray.filter(c => {
+      const clientesMesAnteriorCount = clientesArray.filter((c) => {
         try {
           const data = new Date(c.dataCadastro);
-          return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
+          return (
+            data.getMonth() === mesAnterior &&
+            data.getFullYear() === anoMesAnterior
+          );
         } catch (e) {
           return false;
         }
       }).length;
 
-      const produtosMesAtualCount = produtosArray.filter(p => {
+      const produtosMesAtualCount = produtosArray.filter((p) => {
         try {
           const data = new Date(p.dataCadastro);
-          return data.getMonth() === mesAtual && data.getFullYear() === anoAtual;
+          return (
+            data.getMonth() === mesAtual && data.getFullYear() === anoAtual
+          );
         } catch (e) {
           return false;
         }
       }).length;
 
-      const produtosMesAnteriorCount = produtosArray.filter(p => {
+      const produtosMesAnteriorCount = produtosArray.filter((p) => {
         try {
           const data = new Date(p.dataCadastro);
-          return data.getMonth() === mesAnterior && data.getFullYear() === anoMesAnterior;
+          return (
+            data.getMonth() === mesAnterior &&
+            data.getFullYear() === anoMesAnterior
+          );
         } catch (e) {
           return false;
         }
@@ -275,17 +307,20 @@ const HomeScreen = ({ navigation }) => {
         const data = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
         const mes = data.getMonth();
         const ano = data.getFullYear();
-        
-        const nomeMes = data.toLocaleDateString('pt-BR', { month: 'short' });
+
+        const nomeMes = data.toLocaleDateString("pt-BR", { month: "short" });
         mesesLabels.push(nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1, 3));
 
         let faturamentoMes = 0;
         let pedidosCount = 0;
 
-        pedidosArray.forEach(p => {
+        pedidosArray.forEach((p) => {
           try {
             const dataPedido = new Date(p.data);
-            if (dataPedido.getMonth() === mes && dataPedido.getFullYear() === ano) {
+            if (
+              dataPedido.getMonth() === mes &&
+              dataPedido.getFullYear() === ano
+            ) {
               faturamentoMes += Number(p?.total) || 0;
               pedidosCount++;
             }
@@ -297,14 +332,18 @@ const HomeScreen = ({ navigation }) => {
       }
 
       // Top produtos, clientes e método de pagamento
-      const produtoMaisVendido = Object.values(produtosVendidos)
-        .sort((a, b) => b.quantidade - a.quantidade)[0] || null;
+      const produtoMaisVendido =
+        Object.values(produtosVendidos).sort(
+          (a, b) => b.quantidade - a.quantidade
+        )[0] || null;
 
-      const clienteMaisCompras = Object.values(comprasPorCliente)
-        .sort((a, b) => b.valor - a.valor)[0] || null;
+      const clienteMaisCompras =
+        Object.values(comprasPorCliente).sort((a, b) => b.valor - a.valor)[0] ||
+        null;
 
-      const metodoPagamentoMaisUsado = Object.entries(metodosPagamento)
-        .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      const metodoPagamentoMaisUsado =
+        Object.entries(metodosPagamento).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        null;
 
       setDashboardData({
         totalClientes: clientesArray.length,
@@ -314,17 +353,31 @@ const HomeScreen = ({ navigation }) => {
         faturamentoTotal,
         faturamentoMesAtual,
         ticketMedio,
-        crescimentoClientes: calcularPercentual(clientesMesAtualCount, clientesMesAnteriorCount),
-        crescimentoProdutos: calcularPercentual(produtosMesAtualCount, produtosMesAnteriorCount),
-        crescimentoPedidos: calcularPercentual(pedidosMesAtualCount, pedidosMesAnteriorCount),
-        crescimentoFaturamento: calcularPercentual(faturamentoMesAtual, faturamentoMesAnterior),
+        crescimentoClientes: calcularPercentual(
+          clientesMesAtualCount,
+          clientesMesAnteriorCount
+        ),
+        crescimentoProdutos: calcularPercentual(
+          produtosMesAtualCount,
+          produtosMesAnteriorCount
+        ),
+        crescimentoPedidos: calcularPercentual(
+          pedidosMesAtualCount,
+          pedidosMesAnteriorCount
+        ),
+        crescimentoFaturamento: calcularPercentual(
+          faturamentoMesAtual,
+          faturamentoMesAnterior
+        ),
         vendasPorMes: {
           labels: mesesLabels,
-          datasets: [{ data: vendasPorMes.length > 0 ? vendasPorMes : [0] }]
+          datasets: [{ data: vendasPorMes.length > 0 ? vendasPorMes : [0] }],
         },
         pedidosPorMes: {
           labels: mesesLabels,
-          datasets: [{ data: pedidosPorMesData.length > 0 ? pedidosPorMesData : [0] }]
+          datasets: [
+            { data: pedidosPorMesData.length > 0 ? pedidosPorMesData : [0] },
+          ],
         },
         pedidosRecentes,
         produtoMaisVendido,
@@ -332,43 +385,55 @@ const HomeScreen = ({ navigation }) => {
         metodoPagamentoMaisUsado,
       });
     } catch (error) {
-      console.error('Erro ao carregar dados do dashboard:', error);
+      console.error("Erro ao carregar dados do dashboard:", error);
     }
   };
 
   // Configuração de gráficos memoizada
-  const chartConfig = useMemo(() => ({
-    backgroundColor: '#fff',
-    backgroundGradientFrom: '#fff',
-    backgroundGradientTo: '#fff',
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(33, 150, 243, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
-    style: { borderRadius: 16 },
-    propsForLabels: { fontSize: 12 },
-  }), []);
+  const chartConfig = useMemo(
+    () => ({
+      backgroundColor: "#fff",
+      backgroundGradientFrom: "#fff",
+      backgroundGradientTo: "#fff",
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(33, 150, 243, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
+      style: { borderRadius: 16 },
+      propsForLabels: { fontSize: 12 },
+    }),
+    []
+  );
 
-  const barChartConfig = useMemo(() => ({
-    ...chartConfig,
-    color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
-  }), [chartConfig]);
+  const barChartConfig = useMemo(
+    () => ({
+      ...chartConfig,
+      color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
+    }),
+    [chartConfig]
+  );
 
   // Data formatada memoizada
-  const formattedDate = useMemo(() => 
-    new Date().toLocaleDateString('pt-BR', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }), []
+  const formattedDate = useMemo(
+    () =>
+      new Date().toLocaleDateString("pt-BR", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+    []
   );
 
   return (
-    <ScrollView 
-      style={styles.container} 
+    <ScrollView
+      style={styles.container}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2196F3']} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#2196F3"]}
+        />
       }
     >
       {/* Header */}
@@ -387,7 +452,7 @@ const HomeScreen = ({ navigation }) => {
           icon={Users}
           color="#2196F3"
           growth={dashboardData.crescimentoClientes}
-          onPress={() => navigation.navigate('Clientes')}
+          onPress={() => navigation.navigate("Clientes")}
         />
         <MetricCard
           title="Produtos"
@@ -395,7 +460,7 @@ const HomeScreen = ({ navigation }) => {
           icon={Package}
           color="#4CAF50"
           growth={dashboardData.crescimentoProdutos}
-          onPress={() => navigation.navigate('Produtos')}
+          onPress={() => navigation.navigate("Produtos")}
         />
         <MetricCard
           title="Pedidos"
@@ -403,13 +468,13 @@ const HomeScreen = ({ navigation }) => {
           icon={ShoppingCart}
           color="#FF9800"
           growth={dashboardData.crescimentoPedidos}
-          onPress={() => navigation.navigate('Pedidos')}
+          onPress={() => navigation.navigate("Pedidos")}
         />
         <MetricCard
           title="Faturamento Total"
-          value={`R$ ${dashboardData.faturamentoTotal.toLocaleString('pt-BR', { 
+          value={`R$ ${dashboardData.faturamentoTotal.toLocaleString("pt-BR", {
             minimumFractionDigits: 2,
-            maximumFractionDigits: 2 
+            maximumFractionDigits: 2,
           })}`}
           icon={DollarSign}
           color="#9C27B0"
@@ -422,24 +487,28 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.secondaryMetricCard}>
           <Text style={styles.secondaryMetricLabel}>Faturamento Mês Atual</Text>
           <Text style={styles.secondaryMetricValue}>
-            R$ {dashboardData.faturamentoMesAtual.toLocaleString('pt-BR', { 
+            R${" "}
+            {dashboardData.faturamentoMesAtual.toLocaleString("pt-BR", {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 2 
+              maximumFractionDigits: 2,
             })}
           </Text>
         </View>
         <View style={styles.secondaryMetricCard}>
           <Text style={styles.secondaryMetricLabel}>Ticket Médio</Text>
           <Text style={styles.secondaryMetricValue}>
-            R$ {dashboardData.ticketMedio.toLocaleString('pt-BR', { 
+            R${" "}
+            {dashboardData.ticketMedio.toLocaleString("pt-BR", {
               minimumFractionDigits: 2,
-              maximumFractionDigits: 2 
+              maximumFractionDigits: 2,
             })}
           </Text>
         </View>
         <View style={styles.secondaryMetricCard}>
           <Text style={styles.secondaryMetricLabel}>Indústrias</Text>
-          <Text style={styles.secondaryMetricValue}>{dashboardData.totalIndustrias}</Text>
+          <Text style={styles.secondaryMetricValue}>
+            {dashboardData.totalIndustrias}
+          </Text>
         </View>
       </View>
 
@@ -449,7 +518,9 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.sectionTitle}>Faturamento (Últimos 6 meses)</Text>
           <View style={styles.chartLegend}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#2196F3' }]} />
+              <View
+                style={[styles.legendDot, { backgroundColor: "#2196F3" }]}
+              />
               <Text style={styles.legendText}>Vendas</Text>
             </View>
           </View>
@@ -477,7 +548,9 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.sectionTitle}>Pedidos (Últimos 6 meses)</Text>
           <View style={styles.chartLegend}>
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+              <View
+                style={[styles.legendDot, { backgroundColor: "#FF9800" }]}
+              />
               <Text style={styles.legendText}>Quantidade</Text>
             </View>
           </View>
@@ -497,7 +570,7 @@ const HomeScreen = ({ navigation }) => {
       {/* Insights */}
       <View style={styles.insightsSection}>
         <Text style={styles.sectionTitle}>Insights do Negócio</Text>
-        
+
         {dashboardData.produtoMaisVendido && (
           <InsightCard
             title="Produto Mais Vendido"
@@ -510,7 +583,11 @@ const HomeScreen = ({ navigation }) => {
         {dashboardData.clienteMaisCompras && (
           <InsightCard
             title="Melhor Cliente"
-            description={`${dashboardData.clienteMaisCompras.nome} - R$ ${dashboardData.clienteMaisCompras.valor.toFixed(2)} em compras`}
+            description={`${
+              dashboardData.clienteMaisCompras.nome
+            } - R$ ${dashboardData.clienteMaisCompras.valor.toFixed(
+              2
+            )} em compras`}
             icon={Users}
             color="#2196F3"
           />
@@ -519,7 +596,10 @@ const HomeScreen = ({ navigation }) => {
         {dashboardData.metodoPagamentoMaisUsado && (
           <InsightCard
             title="Método de Pagamento Preferido"
-            description={`${dashboardData.metodoPagamentoMaisUsado.charAt(0).toUpperCase() + dashboardData.metodoPagamentoMaisUsado.slice(1)}`}
+            description={`${
+              dashboardData.metodoPagamentoMaisUsado.charAt(0).toUpperCase() +
+              dashboardData.metodoPagamentoMaisUsado.slice(1)
+            }`}
             icon={DollarSign}
             color="#9C27B0"
           />
@@ -530,28 +610,30 @@ const HomeScreen = ({ navigation }) => {
       <View style={styles.recentSection}>
         <View style={styles.recentHeader}>
           <Text style={styles.sectionTitle}>Pedidos Recentes</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Pedidos')}>
+          <TouchableOpacity onPress={() => navigation.navigate("Pedidos")}>
             <Text style={styles.viewAllText}>Ver todos</Text>
           </TouchableOpacity>
         </View>
-        
+
         {dashboardData.pedidosRecentes.length > 0 ? (
           dashboardData.pedidosRecentes.map((pedido, index) => (
             <RecentOrderItem
               key={pedido.id || index}
               pedido={pedido}
-              onPress={() => navigation.navigate('Pedidos')}
+              onPress={() => navigation.navigate("Pedidos")}
             />
           ))
         ) : (
           <View style={styles.emptyState}>
             <ShoppingCart size={48} color="#ccc" />
             <Text style={styles.emptyStateText}>Nenhum pedido encontrado</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.emptyStateButton}
-              onPress={() => navigation.navigate('Pedidos')}
+              onPress={() => navigation.navigate("Pedidos")}
             >
-              <Text style={styles.emptyStateButtonText}>Criar Primeiro Pedido</Text>
+              <Text style={styles.emptyStateButtonText}>
+                Criar Primeiro Pedido
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -562,32 +644,32 @@ const HomeScreen = ({ navigation }) => {
         <Text style={styles.sectionTitle}>Ações Rápidas</Text>
         <View style={styles.actionsGrid}>
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: '#2196F3' }]}
-            onPress={() => navigation.navigate('Pedidos')}
+            style={[styles.actionCard, { backgroundColor: "#2196F3" }]}
+            onPress={() => navigation.navigate("Pedidos")}
           >
             <ShoppingCart size={28} color="#fff" />
             <Text style={styles.actionCardText}>Novo Pedido</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: '#4CAF50' }]}
-            onPress={() => navigation.navigate('Clientes')}
+            style={[styles.actionCard, { backgroundColor: "#4CAF50" }]}
+            onPress={() => navigation.navigate("Clientes")}
           >
             <Users size={28} color="#fff" />
             <Text style={styles.actionCardText}>Novo Cliente</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: '#FF9800' }]}
-            onPress={() => navigation.navigate('Produtos')}
+            style={[styles.actionCard, { backgroundColor: "#FF9800" }]}
+            onPress={() => navigation.navigate("Produtos")}
           >
             <Package size={28} color="#fff" />
             <Text style={styles.actionCardText}>Novo Produto</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: '#9C27B0' }]}
-            onPress={() => navigation.navigate('Industrias')}
+            style={[styles.actionCard, { backgroundColor: "#9C27B0" }]}
+            onPress={() => navigation.navigate("Industrias")}
           >
             <Calendar size={28} color="#fff" />
             <Text style={styles.actionCardText}>Indústrias</Text>
@@ -603,138 +685,138 @@ const HomeScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   header: {
-    backgroundColor: '#2196F3',
+    backgroundColor: "#2196F3",
     paddingHorizontal: 20,
     paddingTop: 50,
     paddingBottom: 25,
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     elevation: 5,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
   },
   headerTitle: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: "bold",
+    color: "#fff",
     marginBottom: 5,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#E3F2FD',
+    color: "#E3F2FD",
     opacity: 0.9,
   },
   metricsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     paddingHorizontal: 15,
     paddingTop: 20,
     gap: 12,
   },
   metricCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
     flex: 1,
-    minWidth: '47%',
+    minWidth: "47%",
     borderLeftWidth: 4,
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
   },
   metricHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   metricIcon: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   growthBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
     gap: 2,
   },
   growthText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   metricValue: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
     marginBottom: 4,
   },
   metricTitle: {
     fontSize: 13,
-    color: '#666',
-    fontWeight: '500',
+    color: "#666",
+    fontWeight: "500",
   },
   secondaryMetrics: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 15,
     paddingTop: 12,
     gap: 12,
   },
   secondaryMetricCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 15,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
   secondaryMetricLabel: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginBottom: 6,
   },
   secondaryMetricValue: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   chartSection: {
     marginHorizontal: 20,
     marginTop: 25,
   },
   chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 15,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
   },
   chartLegend: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   legendDot: {
@@ -744,18 +826,18 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
   },
   chartContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 15,
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    alignItems: 'center',
+    alignItems: "center",
   },
   chart: {
     borderRadius: 12,
@@ -766,13 +848,13 @@ const styles = StyleSheet.create({
     marginTop: 25,
   },
   insightCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
+    flexDirection: "row",
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 15,
     marginBottom: 12,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -781,8 +863,8 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 15,
   },
   insightContent: {
@@ -790,13 +872,13 @@ const styles = StyleSheet.create({
   },
   insightTitle: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
     marginBottom: 4,
   },
   insightDescription: {
     fontSize: 13,
-    color: '#666',
+    color: "#666",
     lineHeight: 18,
   },
   recentSection: {
@@ -804,93 +886,93 @@ const styles = StyleSheet.create({
     marginTop: 25,
   },
   recentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 15,
   },
   viewAllText: {
     fontSize: 14,
-    color: '#2196F3',
-    fontWeight: '600',
+    color: "#2196F3",
+    fontWeight: "600",
   },
   recentItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 15,
     marginBottom: 12,
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
   recentItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   recentItemIcon: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#E3F2FD",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
   },
   recentItemTitle: {
     fontSize: 15,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "bold",
+    color: "#333",
     marginBottom: 2,
   },
   recentItemClient: {
     fontSize: 13,
-    color: '#666',
+    color: "#666",
     marginBottom: 2,
   },
   recentItemDate: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
   },
   recentItemRight: {
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
   },
   recentItemTotal: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
+    fontWeight: "bold",
+    color: "#4CAF50",
   },
   emptyState: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 40,
-    alignItems: 'center',
+    alignItems: "center",
     elevation: 2,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
   emptyStateText: {
     fontSize: 16,
-    color: '#999',
+    color: "#999",
     marginTop: 15,
     marginBottom: 20,
   },
   emptyStateButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: "#2196F3",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   emptyStateButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
     fontSize: 14,
   },
   quickActions: {
@@ -899,30 +981,30 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
   },
   actionCard: {
     flex: 1,
-    minWidth: '47%',
+    minWidth: "47%",
     borderRadius: 16,
     padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     elevation: 3,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     minHeight: 110,
   },
   actionCardText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
     fontSize: 14,
     marginTop: 10,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });
 

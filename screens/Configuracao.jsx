@@ -11,8 +11,9 @@ import {
   TextInput,
   Image,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import database from '../database/database';
+import migrationService from '../database/migrationService';
 
 const ConfiguracaoScreen = () => {
   const [settings, setSettings] = useState({
@@ -30,6 +31,7 @@ const ConfiguracaoScreen = () => {
 
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [tempCompanyData, setTempCompanyData] = useState({});
 
   useEffect(() => {
@@ -50,21 +52,41 @@ const ConfiguracaoScreen = () => {
 
   const loadSettings = async () => {
     try {
-      const savedSettings = await AsyncStorage.getItem('settings');
-      if (savedSettings) {
-        setSettings((prevSettings) => ({ ...prevSettings, ...JSON.parse(savedSettings) }));
+      const savedSettings = await database.getAllConfiguracoes();
+      
+      if (savedSettings && Object.keys(savedSettings).length > 0) {
+        const parsedSettings = {};
+        
+        // Parse cada configuração
+        for (const [key, value] of Object.entries(savedSettings)) {
+          try {
+            // Tenta fazer parse do JSON
+            parsedSettings[key] = JSON.parse(value);
+          } catch {
+            // Se não for JSON, usa o valor direto
+            parsedSettings[key] = value;
+          }
+        }
+        
+        setSettings((prevSettings) => ({ ...prevSettings, ...parsedSettings }));
       }
     } catch (error) {
       console.error('Erro ao carregar configurações:', error);
+      Alert.alert('Erro', 'Erro ao carregar configurações');
     }
   };
 
   const saveSettings = async (newSettings) => {
     try {
-      await AsyncStorage.setItem('settings', JSON.stringify(newSettings));
+      // Salva cada configuração individualmente
+      for (const [key, value] of Object.entries(newSettings)) {
+        await database.setConfiguracao(key, JSON.stringify(value));
+      }
+      
       setSettings(newSettings);
+      console.log('✅ Configurações salvas com sucesso');
     } catch (error) {
-      console.error('Erro ao salvar configurações:', error);
+      console.error('❌ Erro ao salvar configurações:', error);
       Alert.alert('Erro', 'Erro ao salvar configurações');
     }
   };
@@ -91,17 +113,16 @@ const ConfiguracaoScreen = () => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'], // Corrigido: usar array de strings
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
-        base64: true, // Adicionar base64 diretamente
+        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedImage = result.assets[0];
         
-        // Criar data URI com o Base64 retornado pelo ImagePicker
         if (selectedImage.base64) {
           const imageDataUri = `data:image/jpeg;base64,${selectedImage.base64}`;
           
@@ -112,7 +133,6 @@ const ConfiguracaoScreen = () => {
           
           Alert.alert('Sucesso', 'Logo selecionada com sucesso!');
         } else {
-          // Fallback: usar URI local
           setTempCompanyData(prev => ({ 
             ...prev, 
             logoUri: selectedImage.uri 
@@ -129,24 +149,31 @@ const ConfiguracaoScreen = () => {
 
   const exportData = async () => {
     try {
-      const clientes = await AsyncStorage.getItem('clientes');
-      const produtos = await AsyncStorage.getItem('produtos');
-      const pedidos = await AsyncStorage.getItem('pedidos');
+      const clientes = await database.getAllClientes();
+      const produtos = await database.getAllProdutos();
+      const pedidos = await database.getAllPedidos();
+      const industrias = await database.getAllIndustrias();
 
       const data = {
-        clientes: clientes ? JSON.parse(clientes) : [],
-        produtos: produtos ? JSON.parse(produtos) : [],
-        pedidos: pedidos ? JSON.parse(pedidos) : [],
+        clientes: clientes || [],
+        produtos: produtos || [],
+        pedidos: pedidos || [],
+        industrias: industrias || [],
         dataExportacao: new Date().toISOString(),
       };
 
       Alert.alert(
         'Dados Exportados',
-        `Dados exportados com sucesso!\n\nClientes: ${data.clientes.length}\nProdutos: ${data.produtos.length}\nPedidos: ${data.pedidos.length}`,
+        `Dados exportados com sucesso!\n\n` +
+        `Clientes: ${data.clientes.length}\n` +
+        `Produtos: ${data.produtos.length}\n` +
+        `Pedidos: ${data.pedidos.length}\n` +
+        `Indústrias: ${data.industrias.length}`,
         [{ text: 'OK' }]
       );
       setShowExportModal(false);
     } catch (error) {
+      console.error('Erro ao exportar dados:', error);
       Alert.alert('Erro', 'Erro ao exportar dados');
     }
   };
@@ -162,8 +189,34 @@ const ConfiguracaoScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await AsyncStorage.multiRemove(['clientes', 'produtos', 'pedidos', 'settings']);
-              setSettings({
+              // Deletar todos os dados do SQLite
+              const clientes = await database.getAllClientes();
+              const produtos = await database.getAllProdutos();
+              const pedidos = await database.getAllPedidos();
+              const industrias = await database.getAllIndustrias();
+
+              // Deletar clientes
+              for (const cliente of clientes) {
+                await database.deleteCliente(cliente.id);
+              }
+
+              // Deletar produtos
+              for (const produto of produtos) {
+                await database.deleteProduto(produto.id);
+              }
+
+              // Deletar pedidos
+              for (const pedido of pedidos) {
+                await database.deletePedido(pedido.id);
+              }
+
+              // Deletar indústrias
+              for (const industria of industrias) {
+                await database.deleteIndustria(industria.id);
+              }
+
+              // Resetar configurações para valores padrão
+              const defaultSettings = {
                 notificacoesPedidos: true, 
                 notificacoesClientes: true, 
                 temaEscuro: false, 
@@ -174,9 +227,16 @@ const ConfiguracaoScreen = () => {
                 empresaTelefone: '', 
                 empresaEndereco: '', 
                 empresaLogoUri: null,
-              });
+              };
+
+              await saveSettings(defaultSettings);
+
+              // Resetar flag de migração
+              await database.setConfiguracao('migrated_from_async_storage', 'false');
+
               Alert.alert('Sucesso', 'Todos os dados foram limpos');
             } catch (error) {
+              console.error('Erro ao limpar dados:', error);
               Alert.alert('Erro', 'Erro ao limpar dados');
             }
           },
@@ -218,8 +278,34 @@ const ConfiguracaoScreen = () => {
     );
   };
 
+  const showDataStats = async () => {
+    try {
+      const stats = await migrationService.getDataSize();
+      
+      if (stats) {
+        Alert.alert(
+          'Estatísticas do Banco de Dados',
+          `Dados armazenados:\n\n` +
+          `📊 Clientes: ${stats.clientes}\n` +
+          `📦 Produtos: ${stats.produtos}\n` +
+          `🏭 Indústrias: ${stats.industrias}\n` +
+          `🛒 Pedidos: ${stats.pedidos}`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Erro ao obter estatísticas:', error);
+      Alert.alert('Erro', 'Erro ao obter estatísticas do banco de dados');
+    }
+  };
+
   const SettingItem = ({ title, subtitle, rightComponent, onPress }) => (
-    <TouchableOpacity style={styles.settingItem} onPress={onPress} disabled={!onPress} activeOpacity={onPress ? 0.7 : 1}>
+    <TouchableOpacity 
+      style={styles.settingItem} 
+      onPress={onPress} 
+      disabled={!onPress} 
+      activeOpacity={onPress ? 0.7 : 1}
+    >
       <View style={styles.settingContent}>
         <Text style={styles.settingTitle}>{title}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
@@ -234,6 +320,7 @@ const ConfiguracaoScreen = () => {
         <Text style={styles.headerTitle}>Configurações</Text>
       </View>
 
+      {/* Notificações */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notificações</Text>
         
@@ -264,6 +351,7 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
+      {/* Aparência */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Aparência</Text>
         
@@ -281,6 +369,7 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
+      {/* Dados da Empresa */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Dados da Empresa</Text>
         
@@ -302,8 +391,16 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
+      {/* Gerenciamento de Dados */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Gerenciamento de Dados</Text>
+        
+        <SettingItem
+          title="Estatísticas do Banco"
+          subtitle="Ver quantidade de dados armazenados"
+          onPress={showDataStats}
+          rightComponent={<Text style={styles.arrow}>›</Text>}
+        />
         
         <SettingItem
           title="Exportar Dados"
@@ -320,12 +417,18 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
+      {/* Sobre */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Sobre</Text>
         
         <SettingItem
           title="Versão do Aplicativo"
-          subtitle="1.0.0"
+          subtitle="2.0.0 (SQLite)"
+        />
+        
+        <SettingItem
+          title="Banco de Dados"
+          subtitle="SQLite (Migrado)"
         />
         
         <SettingItem
@@ -334,6 +437,7 @@ const ConfiguracaoScreen = () => {
         />
       </View>
 
+      {/* Modal de Dados da Empresa */}
       <Modal visible={showCompanyModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -434,12 +538,13 @@ const ConfiguracaoScreen = () => {
         </View>
       </Modal>
 
+      {/* Modal de Exportação */}
       <Modal visible={showExportModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.exportModalContainer}>
             <Text style={styles.modalTitle}>Exportar Dados</Text>
             <Text style={styles.exportDescription}>
-              Esta função irá criar um backup de todos os seus dados (clientes, produtos e pedidos).
+              Esta função irá criar um backup de todos os seus dados (clientes, produtos, pedidos e indústrias).
             </Text>
             
             <View style={styles.modalButtons}>
@@ -460,6 +565,8 @@ const ConfiguracaoScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <View style={{ height: 100 }} />
     </ScrollView>
   );
 };
