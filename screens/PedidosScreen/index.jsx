@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import database from '../../database/database';
 
 import Header from './components/Header';
 import SearchAndFilters from './components/SearchAndFilters';
@@ -23,7 +23,6 @@ const INITIAL_ORDER_STATE = {
 };
 
 const PedidosScreen = () => {
-  // Estados principais
   const [pedidos, setPedidos] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [produtos, setProdutos] = useState([]);
@@ -38,27 +37,21 @@ const PedidosScreen = () => {
     empresaLogoUri: null
   });
 
-  // Estados de filtros e busca
   const [searchText, setSearchText] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('Todos');
 
-  // Estados dos modais
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showProductSelectionModal, setShowProductSelectionModal] = useState(false);
   const [showOrderDetailsModal, setShowOrderDetails] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
-  // Estados para edição
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState(null);
 
-  // Estado do novo pedido
   const [newOrder, setNewOrder] = useState(INITIAL_ORDER_STATE);
 
-  // Ref para evitar múltiplos carregamentos
   const loadingRef = useRef(false);
 
-  // Memoiza pedidos filtrados com otimização
   const filteredPedidos = useMemo(() => {
     let filtered = pedidos;
 
@@ -87,43 +80,31 @@ const PedidosScreen = () => {
     loadingRef.current = true;
 
     try {
-      const keys = ['pedidos', 'clientes', 'produtos', 'industrias', 'settings'];
-      const values = await AsyncStorage.multiGet(keys);
-      
-      const dataMap = {};
-      values.forEach(([key, value]) => {
-        dataMap[key] = value ? JSON.parse(value) : null;
-      });
+      const [pedidosData, clientesData, produtosData, industriasData, settings] = await Promise.all([
+        database.getAllPedidos(),
+        database.getAllClientes(),
+        database.getAllProdutos(),
+        database.getAllIndustrias(),
+        database.getAllConfiguracoes()
+      ]);
 
-      setPedidos(dataMap.pedidos || []);
-      setClientes(dataMap.clientes || []);
-      setProdutos(dataMap.produtos || []);
-      setIndustrias(dataMap.industrias || []);
+      setPedidos(pedidosData);
+      setClientes(clientesData);
+      setProdutos(produtosData);
+      setIndustrias(industriasData);
       
-      if (dataMap.settings) {
-        setEmpresaSettings({
-          empresaNome: dataMap.settings.empresaNome || '',
-          empresaCNPJ: dataMap.settings.empresaCNPJ || '',
-          empresaEmail: dataMap.settings.empresaEmail || '',
-          empresaTelefone: dataMap.settings.empresaTelefone || '',
-          empresaEndereco: dataMap.settings.empresaEndereco || '',
-          empresaLogoUri: dataMap.settings.empresaLogoUri || null
-        });
-      }
+      setEmpresaSettings({
+        empresaNome: settings.empresaNome || '',
+        empresaCNPJ: settings.empresaCNPJ || '',
+        empresaEmail: settings.empresaEmail || '',
+        empresaTelefone: settings.empresaTelefone || '',
+        empresaEndereco: settings.empresaEndereco || '',
+        empresaLogoUri: settings.empresaLogoUri || null
+      });
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
       loadingRef.current = false;
-    }
-  }, []);
-
-  const savePedidos = useCallback(async (newPedidos) => {
-    try {
-      await AsyncStorage.setItem('pedidos', JSON.stringify(newPedidos));
-      setPedidos(newPedidos);
-    } catch (error) {
-      console.error('Erro ao salvar pedidos:', error);
-      Alert.alert('Erro', 'Erro ao salvar pedidos');
     }
   }, []);
 
@@ -159,13 +140,21 @@ const PedidosScreen = () => {
       data: new Date().toISOString(),
     };
 
-    const updatedPedidos = [pedido, ...pedidos];
-    await savePedidos(updatedPedidos);
-
-    resetOrderForm();
-    setShowNewOrderModal(false);
-    Alert.alert('Sucesso', 'Pedido criado com sucesso!');
-  }, [newOrder, pedidos, savePedidos, resetOrderForm]);
+    try {
+      const success = await database.insertPedido(pedido);
+      if (success) {
+        await loadData();
+        resetOrderForm();
+        setShowNewOrderModal(false);
+        Alert.alert('Sucesso', 'Pedido criado com sucesso!');
+      } else {
+        Alert.alert('Erro', 'Erro ao criar pedido');
+      }
+    } catch (error) {
+      console.error('Erro ao criar pedido:', error);
+      Alert.alert('Erro', 'Erro ao criar pedido');
+    }
+  }, [newOrder, resetOrderForm, loadData]);
 
   const handleEditOrder = useCallback((order) => {
     setShowOrderDetails(false);
@@ -202,28 +191,34 @@ const PedidosScreen = () => {
 
     const { total } = calculateOrderTotals(newOrder);
 
-    const updatedPedidos = pedidos.map(pedido => {
-      if (pedido.id === editingOrderId) {
-        return {
-          ...pedido,
-          cliente: newOrder.cliente,
-          produtos: newOrder.produtos,
-          desconto: newOrder.desconto,
-          metodoPagamento: newOrder.metodoPagamento,
-          prazos: newOrder.prazos,
-          total,
-          observacoes: newOrder.observacoes,
-        };
+    const pedidoAtualizado = {
+      id: editingOrderId,
+      cliente: newOrder.cliente,
+      produtos: newOrder.produtos,
+      desconto: newOrder.desconto,
+      metodoPagamento: newOrder.metodoPagamento,
+      prazos: newOrder.prazos,
+      total,
+      observacoes: newOrder.observacoes,
+      status: pedidos.find(p => p.id === editingOrderId)?.status || 'pendente',
+      data: pedidos.find(p => p.id === editingOrderId)?.data || new Date().toISOString()
+    };
+
+    try {
+      const success = await database.updatePedido(pedidoAtualizado);
+      if (success) {
+        await loadData();
+        resetOrderForm();
+        setShowNewOrderModal(false);
+        Alert.alert('Sucesso', 'Pedido atualizado com sucesso!');
+      } else {
+        Alert.alert('Erro', 'Erro ao atualizar pedido');
       }
-      return pedido;
-    });
-
-    await savePedidos(updatedPedidos);
-
-    resetOrderForm();
-    setShowNewOrderModal(false);
-    Alert.alert('Sucesso', 'Pedido atualizado com sucesso!');
-  }, [newOrder, pedidos, editingOrderId, savePedidos, resetOrderForm]);
+    } catch (error) {
+      console.error('Erro ao atualizar pedido:', error);
+      Alert.alert('Erro', 'Erro ao atualizar pedido');
+    }
+  }, [newOrder, editingOrderId, pedidos, resetOrderForm, loadData]);
 
   const handleCloseOrderModal = useCallback(() => {
     resetOrderForm();
@@ -274,10 +269,14 @@ const PedidosScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              const updatedPedidos = pedidos.filter(pedido => pedido.id !== order.id);
-              await savePedidos(updatedPedidos);
-              setShowOrderDetails(false);
-              Alert.alert('Sucesso', 'Pedido excluído com sucesso!');
+              const success = await database.deletePedido(order.id);
+              if (success) {
+                await loadData();
+                setShowOrderDetails(false);
+                Alert.alert('Sucesso', 'Pedido excluído com sucesso!');
+              } else {
+                Alert.alert('Erro', 'Erro ao excluir pedido');
+              }
             } catch (error) {
               console.error('Erro ao excluir pedido:', error);
               Alert.alert('Erro', 'Não foi possível excluir o pedido. Tente novamente.');
@@ -287,7 +286,7 @@ const PedidosScreen = () => {
       ],
       { cancelable: true }
     );
-  }, [pedidos, savePedidos]);
+  }, [loadData]);
 
   const handleSelectOrder = useCallback((order) => {
     setSelectedOrder(order);

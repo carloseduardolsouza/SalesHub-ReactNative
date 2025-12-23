@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import database from '../../database/database';
 
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
@@ -42,32 +42,11 @@ const ClientesScreen = () => {
 
   const loadClientes = async () => {
     try {
-      const clientesData = await AsyncStorage.getItem('clientes');
-      if (clientesData) {
-        const parsedClientes = JSON.parse(clientesData).map(cliente => ({
-          ...cliente,
-          dataNascimento: cliente.dataNascimento ? new Date(cliente.dataNascimento) : new Date(),
-          endereco: cliente.endereco || {}
-        }));
-        setClientes(parsedClientes);
-      }
+      const clientesData = await database.getAllClientes();
+      setClientes(clientesData);
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
       Alert.alert('Erro', 'Erro ao carregar dados dos clientes');
-    }
-  };
-
-  const saveClientes = async (clientesData) => {
-    try {
-      const dataToSave = clientesData.map(cliente => ({
-        ...cliente,
-        dataNascimento: cliente.dataNascimento.toISOString().split('T')[0],
-      }));
-      await AsyncStorage.setItem('clientes', JSON.stringify(dataToSave));
-      setClientes(clientesData);
-    } catch (error) {
-      console.error('Erro ao salvar clientes:', error);
-      Alert.alert('Erro', 'Erro ao salvar dados dos clientes');
     }
   };
 
@@ -104,18 +83,20 @@ const ClientesScreen = () => {
         dataCadastro: formData.dataCadastro || new Date().toISOString()
       };
 
-      let novosClientes;
+      let success;
       if (isEditing) {
-        novosClientes = clientes.map(c =>
-          c.id === clienteFormatado.id ? clienteFormatado : c
-        );
+        success = await database.updateCliente(clienteFormatado);
       } else {
-        novosClientes = [clienteFormatado, ...clientes];
+        success = await database.insertCliente(clienteFormatado);
       }
 
-      await saveClientes(novosClientes);
-      handleCloseModal();
-      Alert.alert('Sucesso', `Cliente ${isEditing ? 'editado' : 'cadastrado'} com sucesso!`);
+      if (success) {
+        await loadClientes();
+        handleCloseModal();
+        Alert.alert('Sucesso', `Cliente ${isEditing ? 'editado' : 'cadastrado'} com sucesso!`);
+      } else {
+        Alert.alert('Erro', `Erro ao ${isEditing ? 'editar' : 'cadastrar'} cliente`);
+      }
     } catch (error) {
       console.error('Erro ao salvar cliente:', error);
       Alert.alert('Erro', `Erro ao ${isEditing ? 'editar' : 'cadastrar'} cliente`);
@@ -136,9 +117,13 @@ const ClientesScreen = () => {
         {
           text: "Deletar",
           onPress: async () => {
-            const novosClientes = clientes.filter(c => c.id !== id);
-            await saveClientes(novosClientes);
-            Alert.alert("Sucesso", "Cliente deletado com sucesso!");
+            const success = await database.deleteCliente(id);
+            if (success) {
+              await loadClientes();
+              Alert.alert("Sucesso", "Cliente deletado com sucesso!");
+            } else {
+              Alert.alert("Erro", "Erro ao deletar cliente");
+            }
           },
           style: "destructive"
         }

@@ -10,9 +10,9 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { Camera, Image as ImageIcon, Plus, Edit } from 'lucide-react-native';
+import database from '../../database/database';
 
 import { ProductCard } from './components/ProductCard';
 import { SearchBar } from './components/SearchBar';
@@ -51,14 +51,12 @@ const ProdutosScreen = () => {
 
   const { openCamera, openGallery } = useImageHandler();
 
-  // Ref para evitar múltiplos carregamentos
   const loadingRef = useRef(false);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // Memoiza produtos filtrados
   const filteredProducts = useMemo(() => {
     let filtered = produtos;
     
@@ -77,7 +75,6 @@ const ProdutosScreen = () => {
     return filtered;
   }, [produtos, searchText, selectedIndustria]);
 
-  // Memoiza contagem de produtos
   const productCount = useMemo(() => {
     const byIndustry = {};
     produtos.forEach(produto => {
@@ -96,60 +93,18 @@ const ProdutosScreen = () => {
     loadingRef.current = true;
 
     try {
-      const keys = ['produtos', 'industrias'];
-      const values = await AsyncStorage.multiGet(keys);
-      
-      const dataMap = {};
-      values.forEach(([key, value]) => {
-        dataMap[key] = value ? JSON.parse(value) : null;
-      });
+      const [produtosData, industriasData] = await Promise.all([
+        database.getAllProdutos(),
+        database.getAllIndustrias()
+      ]);
 
-      if (dataMap.produtos) {
-        const produtosMigrados = dataMap.produtos.map(p => ({
-          ...p,
-          imagens: p.imagens || (p.imagem ? [p.imagem] : [])
-        }));
-        setProdutos(produtosMigrados);
-      } else {
-        setProdutos([]);
-      }
-
-      if (dataMap.industrias) {
-        setIndustrias(dataMap.industrias);
-      }
+      setProdutos(produtosData);
+      setIndustrias(industriasData);
     } catch (error) {
       console.error('❌ Erro ao carregar produtos:', error);
       Alert.alert('Erro', 'Erro ao carregar dados dos produtos');
     } finally {
       loadingRef.current = false;
-    }
-  }, []);
-
-  const saveProdutos = useCallback(async (produtosData) => {
-    try {
-      const jsonString = JSON.stringify(produtosData);
-      const sizeKB = (jsonString.length * 2) / 1024;
-      
-      if (sizeKB > 5000) {
-        throw new Error('Dados muito grandes! Reduza o número de imagens ou produtos.');
-      }
-
-      await AsyncStorage.setItem('produtos', jsonString);
-      setProdutos(produtosData);
-    } catch (error) {
-      console.error('❌ Erro ao salvar produtos:', error);
-      if (error.message.includes('Row too big')) {
-        Alert.alert(
-          'Dados Muito Grandes',
-          'As imagens são muito pesadas. Por favor:\n\n' +
-          '• Use menos imagens por produto (máx. 3)\n' +
-          '• As imagens já são comprimidas automaticamente\n' +
-          '• Considere deletar produtos antigos se necessário'
-        );
-      } else {
-        Alert.alert('Erro', 'Erro ao salvar dados dos produtos.');
-      }
-      throw error;
     }
   }, []);
 
@@ -186,48 +141,40 @@ const ProdutosScreen = () => {
     }
 
     try {
+      const produtoData = {
+        id: novoProduto.id || Date.now(),
+        nome: novoProduto.nome.trim(),
+        preco: preco,
+        imagens: novoProduto.imagens,
+        industria: novoProduto.industria,
+        descricao: novoProduto.descricao.trim(),
+        variacoes: novoProduto.variacoes,
+        dataCadastro: novoProduto.dataCadastro || new Date().toISOString(),
+        dataAtualizacao: isEditMode ? new Date().toISOString() : null
+      };
+
+      let success;
       if (isEditMode) {
-        const produtosAtualizados = produtos.map(p =>
-          p.id === novoProduto.id
-            ? {
-                ...p,
-                nome: novoProduto.nome.trim(),
-                preco: preco,
-                imagens: novoProduto.imagens,
-                industria: novoProduto.industria,
-                descricao: novoProduto.descricao.trim(),
-                variacoes: novoProduto.variacoes,
-                dataAtualizacao: new Date().toISOString()
-              }
-            : p
-        );
-        await saveProdutos(produtosAtualizados);
+        success = await database.updateProduto(produtoData);
         Alert.alert('Sucesso', 'Produto atualizado com sucesso!');
       } else {
-        const produto = {
-          id: Date.now(),
-          nome: novoProduto.nome.trim(),
-          preco: preco,
-          imagens: novoProduto.imagens,
-          industria: novoProduto.industria,
-          descricao: novoProduto.descricao.trim(),
-          variacoes: novoProduto.variacoes,
-          dataCadastro: new Date().toISOString()
-        };
-
-        const novosProdutos = [produto, ...produtos];
-        await saveProdutos(novosProdutos);
+        success = await database.insertProduto(produtoData);
         Alert.alert('Sucesso', 'Produto cadastrado com sucesso!');
       }
 
-      resetForm();
-      setIsEditMode(false);
-      setShowAddProductModal(false);
-      await loadData();
+      if (success) {
+        resetForm();
+        setIsEditMode(false);
+        setShowAddProductModal(false);
+        await loadData();
+      } else {
+        Alert.alert('Erro', 'Erro ao salvar produto');
+      }
     } catch (error) {
       console.error('❌ Erro ao salvar produto:', error);
+      Alert.alert('Erro', 'Erro ao salvar produto');
     }
-  }, [novoProduto, isEditMode, produtos, parseMoneyValue, saveProdutos, resetForm, loadData]);
+  }, [novoProduto, isEditMode, parseMoneyValue, resetForm, loadData]);
 
   const deleteProduto = useCallback((produtoId) => {
     Alert.alert(
@@ -240,10 +187,14 @@ const ProdutosScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              const produtosAtualizados = produtos.filter(p => p.id !== produtoId);
-              await saveProdutos(produtosAtualizados);
-              setShowProductModal(false);
-              Alert.alert('Sucesso', 'Produto excluído com sucesso!');
+              const success = await database.deleteProduto(produtoId);
+              if (success) {
+                setShowProductModal(false);
+                await loadData();
+                Alert.alert('Sucesso', 'Produto excluído com sucesso!');
+              } else {
+                Alert.alert('Erro', 'Erro ao excluir produto');
+              }
             } catch (error) {
               console.error('❌ Erro ao excluir produto:', error);
               Alert.alert('Erro', 'Erro ao excluir produto');
@@ -252,7 +203,7 @@ const ProdutosScreen = () => {
         }
       ]
     );
-  }, [produtos, saveProdutos]);
+  }, [loadData]);
 
   const handleImageSelected = useCallback((compressedImage) => {
     setNovoProduto(prev => ({ 
