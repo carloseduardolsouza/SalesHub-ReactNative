@@ -2,7 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, StatusBar, View, Text, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { 
+  StyleSheet, 
+  StatusBar, 
+  View, 
+  Text, 
+  ActivityIndicator, 
+  Alert, 
+  TouchableOpacity,
+  ScrollView 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 // Importar banco de dados e migração
@@ -61,7 +70,9 @@ function TabRoutes() {
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [migrationStatus, setMigrationStatus] = useState('');
-  const [migrationError, setMigrationError] = useState(false);
+  const [migrationError, setMigrationError] = useState(null);
+  const [migrationDetails, setMigrationDetails] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     initializeApp();
@@ -70,6 +81,8 @@ export default function App() {
   const initializeApp = async () => {
     try {
       setMigrationStatus('Inicializando banco de dados...');
+      setMigrationError(null);
+      setMigrationDetails(null);
       
       // Inicializar banco de dados
       const dbInitialized = await database.init();
@@ -86,10 +99,16 @@ export default function App() {
       const alreadyMigrated = await migrationService.checkMigrationStatus();
       
       if (!alreadyMigrated) {
+        // Criar backup antes de migrar
+        setMigrationStatus('Criando backup dos dados...');
+        const backupResult = await migrationService.createBackup();
+        console.log('💾 Backup result:', backupResult);
+
         setMigrationStatus('Migrando dados do AsyncStorage para SQLite...');
         console.log('🔄 Starting data migration...');
         
         const migrationResult = await migrationService.migrateFromAsyncStorage();
+        setMigrationDetails(migrationResult);
         
         if (migrationResult.success) {
           if (migrationResult.alreadyMigrated) {
@@ -99,31 +118,65 @@ export default function App() {
             console.log('✅ Migration completed successfully');
             console.log('📊 Stats:', migrationResult.stats);
             
-            // Verificar se houve erros
-            const hasErrors = migrationResult.stats.errors.length > 0;
+            const stats = migrationResult.stats;
+            const hasErrors = stats.errors.length > 0;
+            const hasWarnings = stats.warnings.length > 0;
             
             // Mostrar resumo da migração
-            Alert.alert(
-              hasErrors ? '⚠️ Migração Concluída com Avisos' : '✅ Migração Concluída',
-              `Dados migrados:\n\n` +
-              `• ${migrationResult.stats.clientes} clientes\n` +
-              `• ${migrationResult.stats.produtos} produtos\n` +
-              `• ${migrationResult.stats.industrias} indústrias\n` +
-              `• ${migrationResult.stats.pedidos} pedidos\n` +
-              `• ${migrationResult.stats.configuracoes} configurações\n\n` +
-              `${hasErrors 
-                ? `⚠️ ${migrationResult.stats.errors.length} erro(s):\n${migrationResult.stats.errors.slice(0, 3).map(e => `• ${e.type}: ${e.error}`).join('\n')}` 
-                : '✅ Migração completa sem erros!'}`
-            );
+            const totalMigrated = stats.clientes + stats.produtos + 
+                                 stats.industrias + stats.pedidos + stats.configuracoes;
+
+            if (totalMigrated > 0) {
+              const alertTitle = hasErrors ? '⚠️ Migração Concluída com Avisos' : '✅ Migração Concluída';
+              const alertMessage = 
+                `Dados migrados com sucesso:\n\n` +
+                `✓ ${stats.clientes} cliente${stats.clientes !== 1 ? 's' : ''}\n` +
+                `✓ ${stats.produtos} produto${stats.produtos !== 1 ? 's' : ''}\n` +
+                `✓ ${stats.industrias} indústria${stats.industrias !== 1 ? 's' : ''}\n` +
+                `✓ ${stats.pedidos} pedido${stats.pedidos !== 1 ? 's' : ''}\n` +
+                `✓ ${stats.configuracoes} configuração${stats.configuracoes !== 1 ? 'ões' : ''}\n\n` +
+                `${hasWarnings ? `⚠️ ${stats.warnings.length} aviso(s)\n` : ''}` +
+                `${hasErrors ? `❌ ${stats.errors.length} erro(s)\n\n` : ''}` +
+                `${hasErrors ? 'Toque em "Ver Detalhes" para mais informações.' : ''}`;
+
+              Alert.alert(
+                alertTitle,
+                alertMessage,
+                hasErrors ? [
+                  { text: 'Ver Detalhes', onPress: () => setShowDetails(true) },
+                  { text: 'OK', style: 'default' }
+                ] : [
+                  { text: 'OK', style: 'default' }
+                ]
+              );
+            }
           }
         } else {
           console.error('❌ Migration failed:', migrationResult.error);
-          setMigrationError(true);
+          setMigrationError(migrationResult);
+          
           Alert.alert(
             '❌ Erro na Migração',
-            `Houve um erro ao migrar os dados:\n\n${migrationResult.error}\n\nO app continuará funcionando, mas alguns dados podem não ter sido migrados.`,
+            `Houve um erro ao migrar os dados:\n\n${migrationResult.error}\n\nDeseja tentar restaurar o backup?`,
             [
-              { text: 'Continuar', onPress: () => setMigrationError(false) }
+              { 
+                text: 'Restaurar Backup', 
+                onPress: async () => {
+                  setMigrationStatus('Restaurando backup...');
+                  const restoreResult = await migrationService.restoreBackup();
+                  if (restoreResult.success) {
+                    Alert.alert('✅ Sucesso', 'Backup restaurado com sucesso!');
+                  } else {
+                    Alert.alert('❌ Erro', 'Não foi possível restaurar o backup.');
+                  }
+                  setMigrationError(null);
+                }
+              },
+              { 
+                text: 'Continuar Mesmo Assim', 
+                onPress: () => setMigrationError(null),
+                style: 'destructive'
+              }
             ]
           );
         }
@@ -143,7 +196,8 @@ export default function App() {
 
     } catch (error) {
       console.error('❌ Error initializing app:', error);
-      setMigrationError(true);
+      setMigrationError({ error: error.message });
+      
       Alert.alert(
         '❌ Erro',
         `Erro ao inicializar o aplicativo:\n\n${error.message}\n\nTente reiniciar o app.`,
@@ -152,13 +206,17 @@ export default function App() {
             text: 'Reiniciar', 
             onPress: () => {
               setIsInitializing(true);
-              setMigrationError(false);
+              setMigrationError(null);
               setTimeout(() => initializeApp(), 500);
             }
           },
           {
-            text: 'Continuar',
-            onPress: () => setIsInitializing(false)
+            text: 'Continuar Mesmo Assim',
+            onPress: () => {
+              setIsInitializing(false);
+              setMigrationError(null);
+            },
+            style: 'destructive'
           }
         ]
       );
@@ -167,7 +225,7 @@ export default function App() {
 
   const retryMigration = async () => {
     setIsInitializing(true);
-    setMigrationError(false);
+    setMigrationError(null);
     await migrationService.resetMigration();
     setTimeout(() => initializeApp(), 500);
   };
@@ -177,13 +235,60 @@ export default function App() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2196F3" />
         <Text style={styles.loadingText}>{migrationStatus}</Text>
+        
         {migrationError && (
-          <TouchableOpacity 
-            style={styles.retryButton}
-            onPress={retryMigration}
-          >
-            <Text style={styles.retryButtonText}>Tentar Novamente</Text>
-          </TouchableOpacity>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>⚠️ Ocorreu um erro</Text>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={retryMigration}
+            >
+              <Text style={styles.retryButtonText}>Tentar Novamente</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {showDetails && migrationDetails && (
+          <ScrollView style={styles.detailsContainer}>
+            <View style={styles.detailsContent}>
+              <Text style={styles.detailsTitle}>Detalhes da Migração</Text>
+              
+              {migrationDetails.stats?.errors?.length > 0 && (
+                <View style={styles.errorSection}>
+                  <Text style={styles.sectionTitle}>❌ Erros:</Text>
+                  {migrationDetails.stats.errors.map((error, index) => (
+                    <Text key={index} style={styles.errorItem}>
+                      • {error.type}: {error.error}
+                      {error.nome && ` (${error.nome})`}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              {migrationDetails.stats?.warnings?.length > 0 && (
+                <View style={styles.warningSection}>
+                  <Text style={styles.sectionTitle}>⚠️ Avisos:</Text>
+                  {migrationDetails.stats.warnings.slice(0, 10).map((warning, index) => (
+                    <Text key={index} style={styles.warningItem}>
+                      • {warning.type}: {warning.message}
+                    </Text>
+                  ))}
+                  {migrationDetails.stats.warnings.length > 10 && (
+                    <Text style={styles.moreText}>
+                      ... e mais {migrationDetails.stats.warnings.length - 10} avisos
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              <TouchableOpacity 
+                style={styles.closeDetailsButton}
+                onPress={() => setShowDetails(false)}
+              >
+                <Text style={styles.closeDetailsButtonText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         )}
       </View>
     );
@@ -216,8 +321,18 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  errorContainer: {
+    marginTop: 30,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#f44336',
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
   retryButton: {
-    marginTop: 20,
+    marginTop: 10,
     backgroundColor: '#2196F3',
     paddingHorizontal: 30,
     paddingVertical: 12,
@@ -225,6 +340,72 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  detailsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+  },
+  detailsContent: {
+    backgroundColor: '#fff',
+    margin: 20,
+    marginTop: 60,
+    padding: 20,
+    borderRadius: 12,
+  },
+  detailsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  errorSection: {
+    marginBottom: 20,
+    padding: 15,
+    backgroundColor: '#ffebee',
+    borderRadius: 8,
+  },
+  warningSection: {
+    marginBottom: 20,
+    padding: 15,
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  errorItem: {
+    fontSize: 14,
+    color: '#c62828',
+    marginBottom: 5,
+  },
+  warningItem: {
+    fontSize: 14,
+    color: '#f57c00',
+    marginBottom: 5,
+  },
+  moreText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    color: '#666',
+    marginTop: 5,
+  },
+  closeDetailsButton: {
+    backgroundColor: '#2196F3',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  closeDetailsButtonText: {
+    color: '#fff',
+    textAlign: 'center',
     fontSize: 16,
     fontWeight: 'bold',
   },

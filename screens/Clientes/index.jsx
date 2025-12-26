@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Alert, RefreshControl } from 'react-native';
+import { View, StyleSheet, Alert, RefreshControl, Text } from 'react-native';
 import database from '../../database/database';
 
 import Header from './components/Header';
